@@ -159,12 +159,9 @@ export default function DashboardPage() {
     setForm({ customer: '', products: '', custom: '', units: '', material: '', dept: '' });
   };
   return (
-    <div className="min-h-screen bg-gray-50 flex">
-      {/* Sidebar */}
-      <Sidebar />
-
+    <div className="w-full">
       {/* Main content */}
-      <main className="flex-1 p-6">
+      <main className="w-full p-0">
         {/* Top bar */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
@@ -181,7 +178,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Charts row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
           <div className="bg-white border border-gray-200 rounded-lg p-4">
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-lg font-semibold text-black">Orders by Status</h2>
@@ -211,7 +208,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Orders table section */}
-        <div className="bg-white border border-gray-200 rounded-lg p-4 mt-6">
+        <div className="bg-white border-t border-gray-200 p-6">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-black">All Orders</h2>
             <button onClick={() => setShowCreateModal(true)} className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-md">
@@ -476,9 +473,12 @@ function OrdersTable({ rows = [], statusFilter = 'All', onView }) {
                 </span>
               </td>
               <td className="py-2 px-3">
-                <Link href={`/orders/${r.id}`} className="text-black underline">
+                <button 
+                  onClick={() => onView?.(r)} 
+                  className="text-blue-600 hover:text-blue-800 hover:underline"
+                >
                   View Details
-                </Link>
+                </button>
               </td>
             </tr>
           ))}

@@ -27,9 +27,9 @@ export default function AdminTemplate({ children }) {
   }
 
   return (
-    <div className="flex h-screen bg-gray-100">
+    <div className="min-h-screen bg-gray-100">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto bg-gray-100">
+      <main className="ml-64 p-6 h-[calc(100vh-3rem)] overflow-y-auto">
         {children}
       </main>
     </div>

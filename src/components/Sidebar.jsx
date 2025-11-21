@@ -76,7 +76,7 @@ export default function Sidebar() {
   };
 
   return (
-    <div className={`bg-white h-screen flex flex-col transition-all duration-300 ${collapsed ? 'w-16' : 'w-64'}`}>
+    <div className={`bg-white h-screen flex flex-col transition-all duration-300 ${collapsed ? 'w-16' : 'w-64'} fixed left-0 top-0 bottom-0 z-40 border-r border-gray-200`}>
       {/* Logo */}
       <div className="h-16 flex items-center justify-between px-4 border-b border-gray-200">
         {!collapsed && <h1 className="text-xl font-bold text-blue-600">SwiftFlow</h1>}

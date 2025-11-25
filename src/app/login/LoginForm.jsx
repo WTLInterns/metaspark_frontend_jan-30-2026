@@ -115,6 +115,8 @@ export default function LoginForm() {
         window.location.href = '/MechanistUser/dashboard';
       } else if (user.role === 'inspector') {
         window.location.href = '/InspectionUser/dashboard';
+      } else if (user.role === 'production') {
+        window.location.href = '/ProductionUser/dashboard';
       } else {
         // For other roles, redirect to a default page or show an error
         setError('Access not configured for this role. Please contact support.');

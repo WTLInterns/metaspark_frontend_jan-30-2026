@@ -47,7 +47,7 @@ const adminMenuItems = [
 const designerMenuItems = [
   { name: 'Dashboard', href: '/DesignUser/dashboard', icon: FiHome },
   { name: 'Communications', href: '/DesignUser/communications', icon: FiInbox },
-  { name: 'Design Queue', href: '/DesignUser/design-queue', icon: FiFileText },
+  { name: 'Production Line', href: '/DesignUser/design-queue', icon: FiFileText },
 ];
 
 const mechanistMenuItems = [
@@ -61,41 +61,52 @@ const inspectorMenuItems = [
   { name: 'Communications', href: '/InspectionUser/communications', icon: FiInbox },
   { name: 'Inspection Queue', href: '/InspectionUser/inspection-queue', icon: FiCheckCircle },
 ];
+const productionMenuItems = [
+  { name: 'Dashboard', href: '/ProductionUser/dashboard', icon: FiHome },
+  { name: 'Communications', href: '/ProductionUser/communications', icon: FiInbox },
+  { name: 'Production Line', href: '/ProductionUser/production-line', icon: FiCheckCircle },
+];
 
-// Helper function to get menu items based on user role
+
+// Helper function to get menu items based on user role and current path
 const getMenuItems = (user) => {
-  if (!user) return [];
+  if (typeof window === 'undefined') return [];
   
-  let basePath, items;
-  if (user.role === 'admin') {
-    basePath = '/AdminUser';
-    items = adminMenuItems;
-  } else if (user.role === 'mechanist') {
-    basePath = '/MechanistUser';
-    items = mechanistMenuItems;
-  } else if (user.role === 'inspector' || user.role === 'inspection') {
-    basePath = '/InspectionUser';
-    items = inspectorMenuItems;
-  } else {
-    // Default to inspector menu if user is on InspectionUser pages
-    if (typeof window !== 'undefined' && window.location.pathname.includes('/InspectionUser')) {
-      basePath = '/InspectionUser';
-      items = inspectorMenuItems;
-    } else {
-      basePath = '/DesignUser';
-      items = designerMenuItems;
-    }
+  const path = window.location.pathname;
+  
+  // First check the current path to handle direct navigation
+  if (path.startsWith('/MechanistUser')) {
+    return mechanistMenuItems;
+  }
+  if (path.startsWith('/AdminUser')) {
+    return adminMenuItems;
+  }
+  if (path.startsWith('/DesignUser')) {
+    return designerMenuItems;
+  }
+  if (path.startsWith('/InspectionUser')) {
+    return inspectorMenuItems;
+  }
+  if (path.startsWith('/ProductionUser')) {
+    return productionMenuItems;
   }
   
-  // Ensure all hrefs use the correct base path
-  return items.map(item => ({
-    ...item,
-    href: item.href.startsWith(basePath) ? item.href : `${basePath}${item.href}`,
-    children: item.children?.map(child => ({
-      ...child,
-      href: child.href.startsWith(basePath) ? child.href : `${basePath}${child.href}`
-    }))
-  }));
+  // Fallback to role-based menu if path check doesn't work
+  if (!user) return [];
+  
+  switch(user.role) {
+    case 'admin':
+      return adminMenuItems;
+    case 'mechanist':
+      return mechanistMenuItems;
+    case 'inspector':
+    case 'inspection':
+      return inspectorMenuItems;
+    case 'production':
+      return productionMenuItems;
+    default:
+      return designerMenuItems;
+  }
 };
 
 export default function Sidebar({ user }) {

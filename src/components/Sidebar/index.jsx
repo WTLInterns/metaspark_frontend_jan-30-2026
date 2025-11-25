@@ -47,7 +47,7 @@ const adminMenuItems = [
 const designerMenuItems = [
   { name: 'Dashboard', href: '/DesignUser/dashboard', icon: FiHome },
   { name: 'Communications', href: '/DesignUser/communications', icon: FiInbox },
-  { name: 'Production Line', href: '/DesignUser/design-queue', icon: FiFileText },
+  { name: 'Design Queue', href: '/DesignUser/design-queue', icon: FiFileText },
 ];
 
 const mechanistMenuItems = [

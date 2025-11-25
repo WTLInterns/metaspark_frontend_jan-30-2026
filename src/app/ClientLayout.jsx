@@ -15,6 +15,26 @@ export default function ClientLayout({ children }) {
   const pathname = usePathname();
   const [user, setUser] = useState(null);
 
+  const handleLogout = () => {
+    localStorage.removeItem('swiftflow-user');
+    router.push('/login');
+  };
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      const dropdown = document.getElementById('user-dropdown');
+      const button = document.getElementById('user-menu-button');
+      
+      if (showUserMenu && dropdown && !dropdown.contains(event.target) && !button.contains(event.target)) {
+        setShowUserMenu(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showUserMenu]);
+
   useEffect(() => {
     setMounted(true);
     
@@ -22,7 +42,11 @@ export default function ClientLayout({ children }) {
     const userData = JSON.parse(localStorage.getItem('swiftflow-user') || 'null');
     setUser(userData);
     
-    const isProtectedRoute = pathname?.startsWith('/AdminUser') || pathname?.startsWith('/DesignUser') || pathname?.startsWith('/MechanistUser') || pathname?.startsWith('/InspectionUser') || pathname?.startsWith('/ProductionUser');
+    const isProtectedRoute = pathname?.startsWith('/AdminUser') || 
+                          pathname?.startsWith('/DesignUser') || 
+                          pathname?.startsWith('/MechanistUser') || 
+                          pathname?.startsWith('/InspectionUser') || 
+                          pathname?.startsWith('/ProductionUser');
     
     if (isProtectedRoute && !userData) {
       router.push('/login');
@@ -81,56 +105,48 @@ export default function ClientLayout({ children }) {
             
             {/* Mobile header */}
             <header className="sticky top-0 z-30 flex items-center justify-between h-16 px-4 bg-white border-b border-gray-200 lg:hidden">
-              <div className="flex items-center">
+              <div className="flex items-center justify-between w-full">
                 <button
                   onClick={() => setSidebarOpen(!sidebarOpen)}
                   className="p-2 text-gray-500 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   {sidebarOpen ? <FiX className="w-5 h-5" /> : <FiMenu className="w-5 h-5" />}
                 </button>
-                <h1 className="ml-2 text-lg font-semibold text-gray-800">
-                  {pathname.includes('MechanistUser') 
-                    ? 'Mechanist' 
-                    : pathname.includes('InspectionUser') 
-                      ? 'Inspector' 
-                      : pathname.includes('ProductionUser')
-                        ? 'Production'
-                        : 'Designer'} Dashboard
-                </h1>
-              </div>
-              <div className="flex items-center">
-                {/* Profile dropdown */}
-                <div className="relative ml-3">
-                  <div>
-                    <button
-                      type="button"
-                      className="flex rounded-full bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-gray-800"
-                      id="user-menu-button"
-                      aria-expanded="false"
-                      aria-haspopup="true"
-                      onClick={() => setShowUserMenu(!showUserMenu)}
-                    >
-                      <span className="sr-only">Open user menu</span>
-                      <div className="h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-medium">
-                        {user?.name
-                          ? user.name
-                              .split(' ')
-                              .map((n) => n[0])
-                              .join('')
-                          : 'U'}
-                      </div>
-                    </button>
-                  </div>
+                <div className="relative">
+                  <button
+                    type="button"
+                    className="flex rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    id="user-menu-button"
+                    aria-expanded={showUserMenu}
+                    aria-haspopup="true"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowUserMenu(!showUserMenu);
+                    }}
+                  >
+                    <span className="sr-only">Open user menu</span>
+                    <div className="h-8 w-8 rounded-full bg-gray-800 flex items-center justify-center">
+                      <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                      </svg>
+                    </div>
+                  </button>
 
                   {/* Dropdown menu */}
                   {showUserMenu && (
                     <div
-                      className="absolute right-0 z-10 mt-2 w-48 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none"
+                      id="user-dropdown"
+                      className="absolute right-0 z-50 mt-2 w-56 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none"
                       role="menu"
                       aria-orientation="vertical"
                       aria-labelledby="user-menu-button"
                       tabIndex="-1"
+                      onClick={(e) => e.stopPropagation()}
                     >
+                      <div className="px-4 py-3 border-b border-gray-100">
+                        <p className="text-sm font-medium text-gray-900">{user?.name || 'User'}</p>
+                        <p className="text-xs text-gray-500 truncate">{user?.email || ''}</p>
+                      </div>
                       <a
                         href="#"
                         className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
@@ -138,7 +154,7 @@ export default function ClientLayout({ children }) {
                         tabIndex="-1"
                         id="user-menu-item-0"
                       >
-                        Your Profile
+                        Profile
                       </a>
                       <a
                         href="#"
@@ -150,11 +166,8 @@ export default function ClientLayout({ children }) {
                         Settings
                       </a>
                       <button
-                        onClick={() => {
-                          localStorage.removeItem('swiftflow-user');
-                          router.push('/login');
-                        }}
-                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        onClick={handleLogout}
+                        className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
                         role="menuitem"
                         tabIndex="-1"
                         id="user-menu-item-2"
@@ -164,11 +177,6 @@ export default function ClientLayout({ children }) {
                     </div>
                   )}
                 </div>
-                <button className="p-2 text-gray-500 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-medium">
-                    {user?.name?.charAt(0) || 'U'}
-                  </div>
-                </button>
               </div>
             </header>
           </>
@@ -176,8 +184,81 @@ export default function ClientLayout({ children }) {
         
         {/* Main content */}
         <div className="flex flex-col">
-          <main className={`${showSidebar ? 'lg:pl-64' : ''} flex-1`}>
-            {children}
+          {/* Desktop header */}
+          <header className="hidden lg:flex items-center justify-end h-16 px-6 bg-white border-b border-gray-200">
+            <div className="flex items-center">
+              <div className="relative">
+                <button
+                  type="button"
+                  className="flex rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  id="desktop-user-menu-button"
+                  aria-expanded={showUserMenu}
+                  aria-haspopup="true"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowUserMenu(!showUserMenu);
+                  }}
+                >
+                  <span className="sr-only">Open user menu</span>
+                  <div className="h-8 w-8 rounded-full bg-gray-800 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                    </svg>
+                  </div>
+                </button>
+
+                {/* Dropdown menu */}
+                {showUserMenu && (
+                  <div
+                    id="desktop-user-dropdown"
+                    className="absolute right-0 z-50 mt-2 w-56 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none"
+                    role="menu"
+                    aria-orientation="vertical"
+                    aria-labelledby="desktop-user-menu-button"
+                    tabIndex="-1"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="px-4 py-3 border-b border-gray-100">
+                      <p className="text-sm font-medium text-gray-900">{user?.name || 'User'}</p>
+                      <p className="text-xs text-gray-500 truncate">{user?.email || ''}</p>
+                    </div>
+                    <a
+                      href="#"
+                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      role="menuitem"
+                      tabIndex="-1"
+                      id="desktop-user-menu-item-0"
+                    >
+                      Profile
+                    </a>
+                    <a
+                      href="#"
+                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      role="menuitem"
+                      tabIndex="-1"
+                      id="desktop-user-menu-item-1"
+                    >
+                      Settings
+                    </a>
+                    <button
+                      onClick={handleLogout}
+                      className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
+                      role="menuitem"
+                      tabIndex="-1"
+                      id="desktop-user-menu-item-2"
+                    >
+                      Sign out
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </header>
+          
+          <main className={`${showSidebar ? 'lg:pl-64' : ''} flex-1 ${showSidebar ? 'pt-16' : ''}`}>
+            <div className="h-full">
+              {children}
+            </div>
           </main>
         </div>
       </div>

@@ -232,7 +232,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="relative flex items-center gap-3">
-            <button className="p-2 rounded-full hover:bg-gray-100">🔔</button>
+            {/* <button className="p-2 rounded-full hover:bg-gray-100">🔔</button> */}
             <button
               type="button"
               onClick={() => setShowUserMenu((v) => !v)}

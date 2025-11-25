@@ -170,10 +170,10 @@ export default function DashboardPage() {
             <h1 className="text-2xl font-semibold text-black">Dashboard</h1>
           </div>
 
-          <div className="flex items-center gap-3">
+          {/* <div className="flex items-center gap-3">
             <button className="p-2 rounded-full hover:bg-gray-100">🔔</button>
             <div className="h-8 w-8 rounded-full bg-gray-800" />
-          </div>
+          </div> */}
         </div>
 
         {/* Charts row */}

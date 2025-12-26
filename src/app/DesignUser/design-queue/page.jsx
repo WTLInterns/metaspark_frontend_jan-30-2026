@@ -139,6 +139,11 @@ export default function DesignQueuePage() {
   const [selectedSubnestRowNos, setSelectedSubnestRowNos] = useState([]);
   const [selectedPartsRowNos, setSelectedPartsRowNos] = useState([]);
   const [selectedMaterialRowNos, setSelectedMaterialRowNos] = useState([]);
+  const [designerSelectedRowNos, setDesignerSelectedRowNos] = useState([]);
+  const [productionSelectedRowNos, setProductionSelectedRowNos] = useState([]);
+  const [machineSelectedRowNos, setMachineSelectedRowNos] = useState([]);
+  const [isSendingToMachine, setIsSendingToMachine] = useState(false);
+  const [userRole, setUserRole] = useState('DESIGN');
   const [activePdfTab, setActivePdfTab] = useState('subnest'); // 'subnest' | 'parts' | 'material'
   const [isRowsLoading, setIsRowsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);

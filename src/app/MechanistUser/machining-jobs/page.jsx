@@ -18,10 +18,15 @@ export default function DesignQueuePage() {
   const [partsRows, setPartsRows] = useState([]);
   const [materialRows, setMaterialRows] = useState([]);
   const [selectedSubnestRowNos, setSelectedSubnestRowNos] = useState([]);
+  const [designerSelectedRowNos, setDesignerSelectedRowNos] = useState([]); // rows selected by Designer (read-only)
+  const [productionSelectedRowNos, setProductionSelectedRowNos] = useState([]); // rows selected by Production (read-only)
+  const [machineSelectedRowNos, setMachineSelectedRowNos] = useState([]); // local selection by Machine
   const [activePdfTab, setActivePdfTab] = useState('subnest');
   const [isSaving, setIsSaving] = useState(false);
   const [machineNameMap, setMachineNameMap] = useState({});
   const [form, setForm] = useState({ customer: '', products: '', custom: '', units: '', material: '', dept: '' });
+  const [userRole, setUserRole] = useState('MACHINING');
+  const [toast, setToast] = useState({ message: '', type: '' });
 
   const createOrder = () => {
     const currentMax = Math.max(
@@ -188,6 +193,89 @@ export default function DesignQueuePage() {
     return map[s] || 'bg-gray-100 text-gray-700';
   };
 
+  const fetchThreeCheckboxSelection = async (orderId) => {
+    // Always start from empty; any ticks must come from saved backend data only
+    setDesignerSelectedRowNos([]);
+    setProductionSelectedRowNos([]);
+    setMachineSelectedRowNos([]);
+
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+    if (!raw) return;
+    const auth = JSON.parse(raw);
+    const token = auth?.token;
+    if (!token) return;
+
+    const numericId = String(orderId).replace(/^SF/i, '');
+    if (!numericId) return;
+
+    try {
+      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setDesignerSelectedRowNos((data.designerSelectedRowIds || []).map(Number));
+        setProductionSelectedRowNos((data.productionSelectedRowIds || []).map(Number));
+        setMachineSelectedRowNos((data.machineSelectedRowIds || []).map(Number));
+      }
+    } catch (error) {
+      console.error('Error fetching three-checkbox selection:', error);
+    }
+  };
+
+  const handleMachineCheckboxChange = (rowNo, checked) => {
+    setMachineSelectedRowNos(prev =>
+      checked
+        ? [...prev, rowNo]
+        : prev.filter(n => n !== rowNo)
+    );
+  };
+
+  const saveThreeCheckboxSelection = async () => {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+    if (!raw) return;
+    const auth = JSON.parse(raw);
+    const token = auth?.token;
+    if (!token) return;
+
+    const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
+    if (!current) return;
+    const [orderId] = current;
+    const numericId = String(orderId).replace(/^SF/i, '');
+    if (!numericId) return;
+
+    try {
+      setIsSaving(true);
+      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          designerSelectedRowIds: designerSelectedRowNos.map(String),
+          productionSelectedRowIds: productionSelectedRowNos.map(String),
+          machineSelectedRowIds: machineSelectedRowNos.map(String),
+        }),
+      });
+
+      if (response.ok) {
+        setPdfModalUrl(null);
+        setPdfRows([]);
+        setPartsRows([]);
+        setMaterialRows([]);
+        setSelectedSubnestRowNos([]);
+        setDesignerSelectedRowNos([]);
+        setProductionSelectedRowNos([]);
+        setMachineSelectedRowNos([]);
+      }
+    } catch (error) {
+      console.error('Error saving selection:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex">
       <Sidebar />
@@ -249,11 +337,15 @@ export default function DesignQueuePage() {
                           type="button"
                           onClick={async () => {
                             const url = pdfMap[o.id];
+                            if (!url) return;
                             setPdfModalUrl(url);
                             setPdfRows([]);
                             setPartsRows([]);
                             setMaterialRows([]);
                             setSelectedSubnestRowNos([]);
+                            setDesignerSelectedRowNos([]);
+                            setProductionSelectedRowNos([]);
+                            setMachineSelectedRowNos([]);
                             setActivePdfTab('subnest');
 
                             const numericId = String(o.id).replace(/^SF/i, '');
@@ -268,12 +360,10 @@ export default function DesignQueuePage() {
                               const attachmentUrl = encodeURIComponent(url);
                               const headers = { Authorization: `Bearer ${token}` };
 
-                              const [subnestRes, partsRes, materialRes, machSelRes, prodSelRes] = await Promise.all([
+                              const [subnestRes, partsRes, materialRes] = await Promise.all([
                                 fetch(`${baseUrl}/by-url?attachmentUrl=${attachmentUrl}`, { headers }),
                                 fetch(`${baseUrl}/parts/by-url?attachmentUrl=${attachmentUrl}`, { headers }),
                                 fetch(`${baseUrl}/material-data/by-url?attachmentUrl=${attachmentUrl}`, { headers }),
-                                fetch(`http://localhost:8080/pdf/order/${numericId}/machining-selection`, { headers }),
-                                fetch(`http://localhost:8080/pdf/order/${numericId}/selection`, { headers }),
                               ]);
 
                               if (subnestRes.ok) {
@@ -288,22 +378,9 @@ export default function DesignQueuePage() {
                                 const data = await materialRes.json();
                                 setMaterialRows(Array.isArray(data) ? data : []);
                               }
-                              let baseIds = [];
-                              if (prodSelRes.ok) {
-                                const prodJson = await prodSelRes.json();
-                                const ids = Array.isArray(prodJson.selectedRowIds) ? prodJson.selectedRowIds : [];
-                                baseIds = ids.map(Number);
-                              }
 
-                              if (machSelRes.ok) {
-                                const machJson = await machSelRes.json();
-                                const ids = Array.isArray(machJson.selectedRowIds) ? machJson.selectedRowIds.map(Number) : [];
-                                // If machining already has its own selection, prefer that;
-                                // otherwise fall back to production selection so Mechanist sees prior picks.
-                                setSelectedSubnestRowNos(ids.length > 0 ? ids : baseIds);
-                              } else {
-                                setSelectedSubnestRowNos(baseIds);
-                              }
+                              // Fetch three-checkbox selection data
+                              await fetchThreeCheckboxSelection(o.id);
                             } catch {
                             }
                           }}
@@ -348,6 +425,9 @@ export default function DesignQueuePage() {
               setPartsRows([]);
               setMaterialRows([]);
               setSelectedSubnestRowNos([]);
+              setDesignerSelectedRowNos([]);
+              setProductionSelectedRowNos([]);
+              setMachineSelectedRowNos([]);
             }}
           />
           <div className="absolute inset-0 flex items-center justify-center p-4">
@@ -362,6 +442,9 @@ export default function DesignQueuePage() {
                     setPartsRows([]);
                     setMaterialRows([]);
                     setSelectedSubnestRowNos([]);
+                    setDesignerSelectedRowNos([]);
+                    setProductionSelectedRowNos([]);
+                    setMachineSelectedRowNos([]);
                   }}
                   className="text-gray-500 hover:text-gray-700 text-xl leading-none"
                 >
@@ -421,7 +504,9 @@ export default function DesignQueuePage() {
                             <th className="px-2 py-1">Qty</th>
                             <th className="px-2 py-1">Area (m²)</th>
                             <th className="px-2 py-1">Eff. %</th>
-                            <th className="px-2 py-1 text-center">Select</th>
+                            <th className="px-2 py-1 text-center">Designer</th>
+                            <th className="px-2 py-1 text-center">Production</th>
+                            <th className="px-2 py-1 text-center">Machine</th>
                           </tr>
                         </thead>
                         <tbody className="text-gray-900 divide-y divide-gray-100">
@@ -441,15 +526,26 @@ export default function DesignQueuePage() {
                               <td className="px-2 py-1 text-center">
                                 <input
                                   type="checkbox"
-                                  checked={selectedSubnestRowNos.includes(row.rowNo)}
-                                  onChange={(e) => {
-                                    const checked = e.target.checked;
-                                    setSelectedSubnestRowNos((prev) =>
-                                      checked
-                                        ? [...prev, row.rowNo]
-                                        : prev.filter((n) => n !== row.rowNo)
-                                    );
-                                  }}
+                                  checked={designerSelectedRowNos.includes(row.rowNo)}
+                                  disabled={true}
+                                  className="cursor-not-allowed opacity-50"
+                                />
+                              </td>
+                              <td className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={productionSelectedRowNos.includes(row.rowNo)}
+                                  disabled={true}
+                                  className="cursor-not-allowed opacity-50"
+                                />
+                              </td>
+                              <td className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={machineSelectedRowNos.includes(row.rowNo)}
+                                  onChange={(e) => handleMachineCheckboxChange(row.rowNo, e.target.checked)}
+                                  disabled={userRole !== 'MACHINING'}
+                                  className={userRole === 'MACHINING' ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}
                                 />
                               </td>
                             </tr>
@@ -518,46 +614,72 @@ export default function DesignQueuePage() {
                       </table>
                     )}
                   </div>
-                  <div className="p-3 border-t border-gray-200 flex items-center justify-end">
-                    <button
-                      type="button"
-                      disabled={isSaving || selectedSubnestRowNos.length === 0}
-                      onClick={async () => {
-                        const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
-                        if (!current) return;
-                        const [orderId] = current;
-                        const numericId = String(orderId).replace(/^SF/i, '');
-                        if (!numericId) return;
+                  <div className="p-3 border-t border-gray-200">
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={machineSelectedRowNos.length === 0 || isSaving}
+                        onClick={saveThreeCheckboxSelection}
+                        className="flex-1 rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white text-xs py-2"
+                      >
+                        {isSaving ? 'Saving…' : 'Save Machine Selection'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={machineSelectedRowNos.length === 0 || isSaving}
+                        onClick={async () => {
+                          const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+                          if (!raw) return;
+                          const auth = JSON.parse(raw);
+                          const token = auth?.token;
+                          if (!token) return;
 
-                        const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
-                        if (!raw) return;
-                        const auth = JSON.parse(raw);
-                        const token = auth?.token;
-                        if (!token) return;
+                          const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
+                          if (!current) return;
+                          const [orderId] = current;
+                          const numericId = String(orderId).replace(/^SF/i, '');
+                          if (!numericId) return;
 
-                        try {
-                          setIsSaving(true);
-                          await fetch(`http://localhost:8080/pdf/order/${numericId}/machining-selection`, {
-                            method: 'POST',
-                            headers: {
-                              'Content-Type': 'application/json',
-                              Authorization: `Bearer ${token}`,
-                            },
-                            body: JSON.stringify({ selectedRowIds: selectedSubnestRowNos.map(String) }),
-                          });
-                          setPdfModalUrl(null);
-                          setPdfRows([]);
-                          setPartsRows([]);
-                          setMaterialRows([]);
-                          setSelectedSubnestRowNos([]);
-                        } finally {
-                          setIsSaving(false);
-                        }
-                      }}
-                      className="w-full rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white text-xs py-2"
-                    >
-                      {isSaving ? 'Sending to Inspection…' : 'Save & Send to Inspection'}
-                    </button>
+                          try {
+                            setIsSaving(true);
+                            const res = await fetch(`http://localhost:8080/pdf/order/${numericId}/inspection-selection`, {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                Authorization: `Bearer ${token}`,
+                              },
+                              body: JSON.stringify({
+                                selectedRowIds: machineSelectedRowNos.map(String),
+                              }),
+                            });
+
+                            if (!res.ok) {
+                              let msg = 'Failed to send to Inspection';
+                              try {
+                                const data = await res.json();
+                                if (data && data.message) msg = data.message;
+                              } catch {}
+                              setToast({ message: msg, type: 'error' });
+                            } else {
+                              setToast({ message: 'Selection sent to Inspection successfully.', type: 'success' });
+                              setPdfModalUrl(null);
+                              setPdfRows([]);
+                              setPartsRows([]);
+                              setMaterialRows([]);
+                              setSelectedSubnestRowNos([]);
+                              setDesignerSelectedRowNos([]);
+                              setProductionSelectedRowNos([]);
+                              setMachineSelectedRowNos([]);
+                            }
+                          } finally {
+                            setIsSaving(false);
+                          }
+                        }}
+                        className="flex-1 rounded-md bg-green-600 disabled:bg-gray-300 disabled:text-gray-600 text-white text-xs py-2"
+                      >
+                        Send to Inspection
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

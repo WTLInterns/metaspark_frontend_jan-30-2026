@@ -30,11 +30,14 @@ export default function ProductionLinePage() {
   const [orders, setOrders] = useState([]);
   const [pdfMap, setPdfMap] = useState({});
   const [pdfModalUrl, setPdfModalUrl] = useState(null);
-  const [pdfRows, setPdfRows] = useState([]);
-  const [partsRows, setPartsRows] = useState([]);
-  const [materialRows, setMaterialRows] = useState([]);
-  const [designerSelectedRowIds, setDesignerSelectedRowIds] = useState([]); // rows selected by Designer (read-only)
-  const [productionSelectedRowNos, setProductionSelectedRowNos] = useState([]); // local selection by Production
+  const [selectedSubnestRowNos, setSelectedSubnestRowNos] = useState([]);
+  const [selectedPartsRowNos, setSelectedPartsRowNos] = useState([]);
+  const [selectedMaterialRowNos, setSelectedMaterialRowNos] = useState([]);
+  // Three-checkbox state: always populated only from backend, never pre-filled locally
+  const [designerSelectedRowNos, setDesignerSelectedRowNos] = useState([]);
+  const [productionSelectedRowNos, setProductionSelectedRowNos] = useState([]);
+  const [machineSelectedRowNos, setMachineSelectedRowNos] = useState([]);
+  // rows selected by Machine (read-only)
   const [isSendingToMachine, setIsSendingToMachine] = useState(false);
   const [activePdfTab, setActivePdfTab] = useState('subnest');
   const [toast, setToast] = useState({ message: '', type: '' });
@@ -47,6 +50,7 @@ export default function ProductionLinePage() {
     name: '',
     status: 'Active',
   });
+  const [userRole, setUserRole] = useState('PRODUCTION');
 
   useEffect(() => {
     const fetchOrders = async () => {
@@ -140,6 +144,91 @@ export default function ProductionLinePage() {
       console.error('Error loading machines for selection:', err);
     } finally {
       setMachinesLoading(false);
+    }
+  };
+
+  const fetchThreeCheckboxSelection = async (orderId) => {
+    // Always start from a clean slate; any ticks come only from backend response
+    setDesignerSelectedRowNos([]);
+    setProductionSelectedRowNos([]);
+    setMachineSelectedRowNos([]);
+
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+    if (!raw) return;
+    const auth = JSON.parse(raw);
+    const token = auth?.token;
+    if (!token) return;
+
+    const numericId = String(orderId).replace(/^SF/i, '');
+    if (!numericId) return;
+
+    try {
+      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setDesignerSelectedRowNos((data.designerSelectedRowIds || []).map(Number));
+        setProductionSelectedRowNos((data.productionSelectedRowIds || []).map(Number));
+        setMachineSelectedRowNos((data.machineSelectedRowIds || []).map(Number));
+      }
+    } catch (error) {
+      console.error('Error fetching three-checkbox selection:', error);
+    }
+  };
+
+  const handleProductionCheckboxChange = (rowNo, checked) => {
+    setProductionSelectedRowNos((prev) =>
+      checked ? [...prev, rowNo] : prev.filter((n) => n !== rowNo)
+    );
+  };
+
+  const saveThreeCheckboxSelection = async () => {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+    if (!raw) return;
+    const auth = JSON.parse(raw);
+    const token = auth?.token;
+    if (!token) return;
+
+    const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
+    if (!current) return;
+    const [orderId] = current;
+    const numericId = String(orderId).replace(/^SF/i, '');
+    if (!numericId) return;
+
+    try {
+      setIsSendingToMachine(true);
+      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          designerSelectedRowIds: designerSelectedRowNos.map(String),
+          productionSelectedRowIds: productionSelectedRowNos.map(String),
+          machineSelectedRowIds: machineSelectedRowNos.map(String),
+        }),
+      });
+
+      if (response.ok) {
+        setToast({ message: 'Production selection saved successfully', type: 'success' });
+        setPdfModalUrl(null);
+        setPdfRows([]);
+        setPartsRows([]);
+        setMaterialRows([]);
+        setSelectedSubnestRowNos([]);
+        // also clear any previous three-checkbox state so no stale ticks show
+        setDesignerSelectedRowNos([]);
+        setProductionSelectedRowNos([]);
+        setMachineSelectedRowNos([]);
+      } else {
+        setToast({ message: 'Failed to save selection', type: 'error' });
+      }
+    } catch (error) {
+      setToast({ message: 'Error saving selection', type: 'error' });
+    } finally {
+      setIsSendingToMachine(false);
     }
   };
 
@@ -294,6 +383,7 @@ export default function ProductionLinePage() {
                               setMaterialRows([]);
                               setDesignerSelectedRowIds([]);
                               setProductionSelectedRowNos([]);
+                              setMachineSelectedRowNos([]);
 
                               const numericId = String(order.id).replace(/^SF/i, '');
                               const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
@@ -310,11 +400,10 @@ export default function ProductionLinePage() {
 
                                 const headers = { Authorization: `Bearer ${token}` };
 
-                                const [subnestRes, partsRes, materialRes, selRes] = await Promise.all([
+                                const [subnestRes, partsRes, materialRes] = await Promise.all([
                                   fetch(baseSubnest, { headers }),
                                   fetch(baseParts, { headers }),
                                   fetch(baseMaterial, { headers }),
-                                  fetch(`http://localhost:8080/pdf/order/${numericId}/selection`, { headers }),
                                 ]);
 
                                 if (subnestRes.ok) {
@@ -329,14 +418,9 @@ export default function ProductionLinePage() {
                                   const data = await materialRes.json();
                                   setMaterialRows(Array.isArray(data) ? data : []);
                                 }
-                                if (selRes.ok) {
-                                  const selJson = await selRes.json();
-                                  const ids = Array.isArray(selJson.selectedRowIds) ? selJson.selectedRowIds : [];
-                                  const stringIds = ids.map(String);
-                                  setDesignerSelectedRowIds(stringIds);
-                                  // initialise production selection with designer's selection so they see same ticks but can change
-                                  setProductionSelectedRowNos(stringIds.map(Number));
-                                }
+
+                                // Fetch three-checkbox selection data
+                                await fetchThreeCheckboxSelection(order.id);
                               } catch {
                               }
                             }}
@@ -413,6 +497,7 @@ export default function ProductionLinePage() {
               setMaterialRows([]);
               setDesignerSelectedRowIds([]);
               setProductionSelectedRowNos([]);
+              setMachineSelectedRowNos([]);
             }}
           />
           <div className="absolute inset-0 flex items-center justify-center p-4">
@@ -428,6 +513,7 @@ export default function ProductionLinePage() {
                     setMaterialRows([]);
                     setDesignerSelectedRowIds([]);
                     setProductionSelectedRowNos([]);
+                    setMachineSelectedRowNos([]);
                   }}
                   className="text-gray-500 hover:text-gray-700 text-xl leading-none"
                 >
@@ -530,7 +616,9 @@ export default function ProductionLinePage() {
                             <th className="px-2 py-1">Qty</th>
                             <th className="px-2 py-1">Area (m²)</th>
                             <th className="px-2 py-1">Eff. %</th>
-                            <th className="px-2 py-1 text-center">Selected</th>
+                            <th className="px-2 py-1 text-center">Designer</th>
+                            <th className="px-2 py-1 text-center">Production</th>
+                            <th className="px-2 py-1 text-center">Machine</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -547,18 +635,29 @@ export default function ProductionLinePage() {
                               <td className="px-2 py-1">{row.qty}</td>
                               <td className="px-2 py-1">{row.areaM2}</td>
                               <td className="px-2 py-1">{row.efficiencyPercent}</td>
+                                <td className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={designerSelectedRowNos.includes(row.rowNo)}
+                                  disabled={true}
+                                  className="cursor-not-allowed opacity-50"
+                                />
+                              </td>
                               <td className="px-2 py-1 text-center">
                                 <input
                                   type="checkbox"
                                   checked={productionSelectedRowNos.includes(row.rowNo)}
-                                  onChange={(e) => {
-                                    const checked = e.target.checked;
-                                    setProductionSelectedRowNos((prev) =>
-                                      checked
-                                        ? [...prev, row.rowNo]
-                                        : prev.filter((n) => n !== row.rowNo)
-                                    );
-                                  }}
+                                  onChange={(e) => handleProductionCheckboxChange(row.rowNo, e.target.checked)}
+                                  disabled={userRole !== 'PRODUCTION'}
+                                  className={userRole === 'PRODUCTION' ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}
+                                />
+                              </td>
+                              <td className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={machineSelectedRowNos.includes(row.rowNo)}
+                                  disabled={true}
+                                  className="cursor-not-allowed opacity-50"
                                 />
                               </td>
                             </tr>
@@ -614,13 +713,6 @@ export default function ProductionLinePage() {
                     )}
                   </div>
                   <div className="p-3 border-t border-gray-200 flex items-center justify-end gap-3 text-xs">
-                    {/* <button
-                      type="button"
-                      className="text-gray-600 hover:text-gray-800 flex items-center gap-1"
-                      onClick={() => setPdfModalUrl(null)}
-                    >
-                      Close
-                    </button> */}
                     <button
                       type="button"
                       disabled={productionSelectedRowNos.length === 0}
@@ -703,6 +795,10 @@ export default function ProductionLinePage() {
 
                     try {
                       setIsSendingToMachine(true);
+                      // Save three-checkbox selection first
+                      await saveThreeCheckboxSelection();
+                      
+                      // Then send to machining with machine selection
                       const res = await fetch(`http://localhost:8080/pdf/order/${numericId}/machining-selection`, {
                         method: 'POST',
                         headers: {

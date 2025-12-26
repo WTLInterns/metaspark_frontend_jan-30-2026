@@ -2,18 +2,60 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import * as orderApi from '@/app/ProductionUser/orders/api';
 
 export default function InspectionQueuePage() {
     const [selectedOrder, setSelectedOrder] = useState(null);
     const [orders, setOrders] = useState([]);
     const [pdfMap, setPdfMap] = useState({});
     const [pdfModalUrl, setPdfModalUrl] = useState(null);
+    const [pdfRows, setPdfRows] = useState([]);
+    const [designerSelectedRowNos, setDesignerSelectedRowNos] = useState([]);
+    const [productionSelectedRowNos, setProductionSelectedRowNos] = useState([]);
+    const [machineSelectedRowNos, setMachineSelectedRowNos] = useState([]);
 
     useEffect(() => {
         const fetchOrders = async () => {
-            // TODO: wire this to a real orders API specific to InspectionUser.
-            // Temporarily leave orders empty so the page compiles and build succeeds.
-            setOrders([]);
+            try {
+                const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+                if (!raw) return;
+                const auth = JSON.parse(raw);
+                const token = auth?.token;
+                if (!token) return;
+
+                // Reuse existing orders API which returns OrderResponse from backend
+                const data = await orderApi.getAllOrders();
+
+                const transformed = (data || []).map((order) => {
+                    const customer = order.customers && order.customers[0];
+                    const customerName = customer
+                        ? (customer.companyName || customer.customerName || 'Unknown Customer')
+                        : 'Unknown Customer';
+
+                    const productText = order.customProductDetails ||
+                        (order.products && order.products.length > 0
+                            ? `${order.products[0].productCode || ''} ${order.products[0].productName || ''}`.trim() || 'No Product'
+                            : 'No Product');
+
+                    return {
+                        id: `SF${order.orderId}`,
+                        customer: customerName,
+                        products: productText,
+                        status: order.status || 'Inspection',
+                        department: order.department,
+                        date: order.dateAdded || '',
+                        // Address information from nested customer structure
+                        address: customer?.billingAddress || customer?.primaryAddress || '',
+                        shippingAddress: customer?.shippingAddress || '',
+                        addressType: 'Billing',
+                        shippingType: 'Shipping',
+                    };
+                });
+
+                setOrders(transformed);
+            } catch {
+                setOrders([]);
+            }
         };
 
         fetchOrders();
@@ -70,6 +112,49 @@ export default function InspectionQueuePage() {
             setPdfMap({});
         }
     }, [orders]);
+
+    const openPdfWithSelections = async (orderId) => {
+        const url = pdfMap[orderId];
+        if (!url) return;
+        setPdfModalUrl(url);
+        setPdfRows([]);
+        setDesignerSelectedRowNos([]);
+        setProductionSelectedRowNos([]);
+        setMachineSelectedRowNos([]);
+
+        const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+        if (!raw) return;
+        const auth = JSON.parse(raw);
+        const token = auth?.token;
+        if (!token) return;
+
+        const numericId = String(orderId).replace(/^SF/i, '');
+        if (!numericId) return;
+
+        try {
+            const headers = { Authorization: `Bearer ${token}` };
+
+            // Fetch subnest rows by attachment URL
+            const baseSubnest = `http://localhost:8080/api/pdf/subnest/by-url?attachmentUrl=${encodeURIComponent(url)}`;
+            const [subnestRes, threeCheckboxRes] = await Promise.all([
+                fetch(baseSubnest, { headers }),
+                fetch(`http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`, { headers }),
+            ]);
+
+            if (subnestRes.ok) {
+                const data = await subnestRes.json();
+                setPdfRows(Array.isArray(data) ? data : []);
+            }
+
+            if (threeCheckboxRes.ok) {
+                const data = await threeCheckboxRes.json();
+                setDesignerSelectedRowNos((data.designerSelectedRowIds || []).map(Number));
+                setProductionSelectedRowNos((data.productionSelectedRowIds || []).map(Number));
+                setMachineSelectedRowNos((data.machineSelectedRowIds || []).map(Number));
+            }
+        } catch {
+        }
+    };
 
     return (
         <div className="p-6">
@@ -146,7 +231,7 @@ export default function InspectionQueuePage() {
                                             <div className="flex items-center gap-2 text-xs">
                                                 <button
                                                     type="button"
-                                                    onClick={() => setPdfModalUrl(pdfMap[order.id])}
+                                                    onClick={() => openPdfWithSelections(order.id)}
                                                     className="text-blue-600 hover:text-blue-800 hover:underline"
                                                 >
                                                     View
@@ -178,31 +263,104 @@ export default function InspectionQueuePage() {
                 </div>
             </div>
 
-            {/* PDF Preview Modal */}
+            {/* PDF Preview + Row Selections Modal */}
             {pdfModalUrl && (
                 <div className="fixed inset-0 z-50">
                     <div
                         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-                        onClick={() => setPdfModalUrl(null)}
+                        onClick={() => {
+                            setPdfModalUrl(null);
+                            setPdfRows([]);
+                            setDesignerSelectedRowNos([]);
+                            setProductionSelectedRowNos([]);
+                            setMachineSelectedRowNos([]);
+                        }}
                     />
                     <div className="absolute inset-0 flex items-center justify-center p-4">
-                        <div className="w-full max-w-4xl h-[80vh] bg-white rounded-lg shadow-xl border border-gray-200 flex flex-col">
+                        <div className="w-full max-w-5xl h-[80vh] bg-white rounded-lg shadow-xl border border-gray-200 flex flex-col overflow-hidden">
                             <div className="flex items-center justify-between p-3 border-b border-gray-200">
-                                <h3 className="text-sm font-semibold text-gray-900">PDF Preview</h3>
+                                <h3 className="text-sm font-semibold text-gray-900">PDF Preview & Row Selections</h3>
                                 <button
                                     type="button"
-                                    onClick={() => setPdfModalUrl(null)}
+                                    onClick={() => {
+                                        setPdfModalUrl(null);
+                                        setPdfRows([]);
+                                        setDesignerSelectedRowNos([]);
+                                        setProductionSelectedRowNos([]);
+                                        setMachineSelectedRowNos([]);
+                                    }}
                                     className="text-gray-500 hover:text-gray-700 text-xl leading-none"
                                 >
                                     ×
                                 </button>
                             </div>
-                            <div className="flex-1">
-                                <iframe
-                                    src={pdfModalUrl}
-                                    className="w-full h-full rounded-b-lg"
-                                    title="PDF Preview"
-                                />
+                            <div className="flex-1 flex min-h-0">
+                                <div className="w-1/2 border-r border-gray-200">
+                                    <iframe
+                                        src={pdfModalUrl}
+                                        className="w-full h-full"
+                                        title="PDF Preview"
+                                    />
+                                </div>
+                                <div className="w-1/2 flex flex-col min-h-0 text-xs">
+                                    <div className="border-b border-gray-200 px-3 py-2 font-medium text-gray-700 flex items-center justify-between">
+                                        <span>SubNest Rows</span>
+                                        <span className="text-[11px] text-gray-500">Designer / Production / Machine</span>
+                                    </div>
+                                    <div className="flex-1 overflow-auto p-2">
+                                        <table className="min-w-full border border-gray-200">
+                                            <thead>
+                                                <tr className="text-left text-gray-700 border-b border-gray-200">
+                                                    <th className="px-2 py-1">No.</th>
+                                                    <th className="px-2 py-1">Size X</th>
+                                                    <th className="px-2 py-1">Size Y</th>
+                                                    <th className="px-2 py-1">Material</th>
+                                                    <th className="px-2 py-1">Thk</th>
+                                                    <th className="px-2 py-1">NC file</th>
+                                                    <th className="px-2 py-1 text-center">Designer</th>
+                                                    <th className="px-2 py-1 text-center">Production</th>
+                                                    <th className="px-2 py-1 text-center">Machine</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-100 text-gray-900">
+                                                {pdfRows.map((row) => (
+                                                    <tr key={row.rowNo}>
+                                                        <td className="px-2 py-1 font-medium">{row.rowNo}</td>
+                                                        <td className="px-2 py-1">{row.sizeX}</td>
+                                                        <td className="px-2 py-1">{row.sizeY}</td>
+                                                        <td className="px-2 py-1">{row.material}</td>
+                                                        <td className="px-2 py-1">{row.thickness}</td>
+                                                        <td className="px-2 py-1">{row.ncFile}</td>
+                                                        <td className="px-2 py-1 text-center">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={designerSelectedRowNos.includes(row.rowNo)}
+                                                                disabled
+                                                                className="cursor-not-allowed opacity-50"
+                                                            />
+                                                        </td>
+                                                        <td className="px-2 py-1 text-center">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={productionSelectedRowNos.includes(row.rowNo)}
+                                                                disabled
+                                                                className="cursor-not-allowed opacity-50"
+                                                            />
+                                                        </td>
+                                                        <td className="px-2 py-1 text-center">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={machineSelectedRowNos.includes(row.rowNo)}
+                                                                disabled
+                                                                className="cursor-not-allowed opacity-50"
+                                                            />
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>

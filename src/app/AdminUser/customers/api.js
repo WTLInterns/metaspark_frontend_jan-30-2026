@@ -1,128 +1,73 @@
-const API_BASE_URL = 'http://localhost:8080/customer';
+import api from '@/utils/api';
 
-// Helper function to get auth token (if needed)
+// For file uploads we need to handle it differently
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+
+// Helper function to get auth token
 const getAuthToken = () => {
   if (typeof window !== 'undefined') {
     const userData = localStorage.getItem('swiftflow-user');
     if (userData) {
       try {
         const user = JSON.parse(userData);
-        return user.token; // Adjust based on how token is stored
+        return user.token;
       } catch (error) {
         console.error('Failed to parse user data:', error);
+        return null;
       }
     }
   }
   return null;
 };
 
-// Helper function to handle API responses
-const handleResponse = async (response) => {
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || 'An error occurred');
-  }
-  return response.json();
-};
-
-// Create headers with optional auth
-const createHeaders = () => {
-  const headers = {
-    'Content-Type': 'application/json',
-  };
-  
-  const token = getAuthToken();
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  
-  return headers;
-};
-
-// Headers for file upload (no explicit Content-Type so browser sets boundary)
-const createUploadHeaders = () => {
-  const headers = {};
-  const token = getAuthToken();
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  return headers;
-};
-
 // Create a new customer
 export const createCustomer = async (customerData) => {
-  const response = await fetch(`${API_BASE_URL}/create`, {
-    method: 'POST',
-    headers: createHeaders(),
-    body: JSON.stringify({
-      customerName: customerData.customerName,
-      companyName: customerData.companyName,
-      customerEmail: customerData.email,
-      customerPhone: customerData.phoneNumber,
-      gstNumber: customerData.gstNumber,
-      primaryAddress: customerData.primaryAddress,
-      billingAddress: customerData.primaryAddress, // Using primary as billing by default
-      shippingAddress: customerData.primaryAddress, // Using primary as shipping by default
-      status: 'Active',
-    }),
+  return await api.post('/customer/create', {
+    customerName: customerData.customerName,
+    companyName: customerData.companyName,
+    customerEmail: customerData.email,
+    customerPhone: customerData.phoneNumber,
+    gstNumber: customerData.gstNumber,
+    primaryAddress: customerData.primaryAddress,
+    billingAddress: customerData.primaryAddress, // Using primary as billing by default
+    shippingAddress: customerData.primaryAddress, // Using primary as shipping by default
+    status: 'Active',
   });
-  return handleResponse(response);
 };
 
 // Get all customers
 export const getAllCustomers = async () => {
-  const response = await fetch(`${API_BASE_URL}/all`, {
-    method: 'GET',
-    headers: createHeaders(),
-  });
-  return handleResponse(response);
+  return await api.get('/customer/all');
 };
 
 // Get all customers and products list
 export const getAllCustomersAndProducts = async () => {
-  const response = await fetch(`${API_BASE_URL}/all-list`, {
-    method: 'GET',
-    headers: createHeaders(),
-  });
-  return handleResponse(response);
+  return await api.get('/customer/all-list');
 };
 
 // Get customer by ID
 export const getCustomerById = async (id) => {
-  const response = await fetch(`${API_BASE_URL}/get/${id}`, {
-    method: 'GET',
-    headers: createHeaders(),
-  });
-  return handleResponse(response);
+  return await api.get(`/customer/get/${id}`);
 };
 
 // Update customer
 export const updateCustomer = async (id, customerData) => {
-  const response = await fetch(`${API_BASE_URL}/update/${id}`, {
-    method: 'PUT',
-    headers: createHeaders(),
-    body: JSON.stringify({
-      customerName: customerData.customerName,
-      companyName: customerData.companyName,
-      customerEmail: customerData.email,
-      customerPhone: customerData.phoneNumber,
-      gstNumber: customerData.gstNumber,
-      primaryAddress: customerData.primaryAddress,
-      billingAddress: customerData.primaryAddress, // Using primary as billing by default
-      shippingAddress: customerData.primaryAddress, // Using primary as shipping by default
-      status: 'Active',
-    }),
+  return await api.put(`/customer/update/${id}`, {
+    customerName: customerData.customerName,
+    companyName: customerData.companyName,
+    customerEmail: customerData.email,
+    customerPhone: customerData.phoneNumber,
+    gstNumber: customerData.gstNumber,
+    primaryAddress: customerData.primaryAddress,
+    billingAddress: customerData.primaryAddress, // Using primary as billing by default
+    shippingAddress: customerData.primaryAddress, // Using primary as shipping by default
+    status: 'Active',
   });
-  return handleResponse(response);
 };
 
 // Delete customer
 export const deleteCustomer = async (id) => {
-  const response = await fetch(`${API_BASE_URL}/delete/${id}`, {
-    method: 'DELETE',
-    headers: createHeaders(),
-  });
-  return handleResponse(response);
+  return await api.delete(`/customer/delete/${id}`);
 };
 
 // Upload customers from Excel
@@ -130,10 +75,48 @@ export const uploadCustomersExcel = async (file) => {
   const formData = new FormData();
   formData.append('file', file);
 
-  const response = await fetch(`${API_BASE_URL}/upload-excel`, {
+  const token = getAuthToken();
+  const headers = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE_URL}/customer/upload-excel`, {
     method: 'POST',
-    headers: createUploadHeaders(),
+    headers,
     body: formData,
   });
-  return handleResponse(response);
+  
+  if (response.status === 401) {
+    // Token expired or invalid, redirect to login
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('swiftflow-user');
+      localStorage.removeItem('swiftflow-token');
+      window.location.href = '/login';
+    }
+    throw new Error('Session expired. Please log in again.');
+  }
+
+  if (!response.ok) {
+    let errorMessage = 'An error occurred';
+    try {
+      const errorText = await response.text();
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.message || errorJson.error || errorText;
+      } catch {
+        errorMessage = errorText;
+      }
+    } catch (e) {
+      errorMessage = response.statusText || errorMessage;
+    }
+    throw new Error(errorMessage);
+  }
+
+  const contentType = response.headers.get('content-type');
+  if (contentType && contentType.includes('application/json')) {
+    return response.json();
+  } else {
+    return response.text();
+  }
 };

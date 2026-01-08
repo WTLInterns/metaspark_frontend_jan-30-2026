@@ -1,17 +1,9 @@
 import { NextResponse } from 'next/server';
 
 export function middleware(request) {
-  // Check if the user is authenticated
-  const isAuthenticated = request.cookies.get('swiftflow-auth');
-  
-  // If the user is not authenticated and is trying to access a protected route
-  if (!isAuthenticated && request.nextUrl.pathname.startsWith('/dashboard')) {
-    // Redirect to the login page
-    const url = request.nextUrl.clone();
-    url.pathname = '/';
-    return NextResponse.redirect(url);
-  }
-  
+  // For now, we'll allow all routes to pass through
+  // Authentication will be handled client-side in the layout
+  // since middleware runs server-side and can't access localStorage
   return NextResponse.next();
 }
 

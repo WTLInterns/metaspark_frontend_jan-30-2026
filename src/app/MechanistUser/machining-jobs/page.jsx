@@ -21,6 +21,16 @@ export default function DesignQueuePage() {
   const [designerSelectedRowNos, setDesignerSelectedRowNos] = useState([]); // rows selected by Designer (read-only)
   const [productionSelectedRowNos, setProductionSelectedRowNos] = useState([]); // rows selected by Production (read-only)
   const [machineSelectedRowNos, setMachineSelectedRowNos] = useState([]); // local selection by Machine
+  // Parts selection (isolated)
+  const [designerPartsSelectedRowNos, setDesignerPartsSelectedRowNos] = useState([]);
+  const [productionPartsSelectedRowNos, setProductionPartsSelectedRowNos] = useState([]);
+  const [machinePartsSelectedRowNos, setMachinePartsSelectedRowNos] = useState([]);
+  const [inspectionPartsSelectedRowNos, setInspectionPartsSelectedRowNos] = useState([]);
+  // Material selection (isolated)
+  const [designerMaterialSelectedRowNos, setDesignerMaterialSelectedRowNos] = useState([]);
+  const [productionMaterialSelectedRowNos, setProductionMaterialSelectedRowNos] = useState([]);
+  const [machineMaterialSelectedRowNos, setMachineMaterialSelectedRowNos] = useState([]);
+  const [inspectionMaterialSelectedRowNos, setInspectionMaterialSelectedRowNos] = useState([]);
   const [activePdfTab, setActivePdfTab] = useState('subnest');
   const [isSaving, setIsSaving] = useState(false);
   const [machineNameMap, setMachineNameMap] = useState({});
@@ -207,6 +217,23 @@ export default function DesignQueuePage() {
     return map[s] || 'bg-gray-100 text-gray-700';
   };
 
+  const partsRowNoCounts = useMemo(() => {
+    const counts = {};
+    (partsRows || []).forEach((r) => {
+      const k = r?.rowNo;
+      if (k === undefined || k === null) return;
+      counts[k] = (counts[k] || 0) + 1;
+    });
+    return counts;
+  }, [partsRows]);
+
+  const getPartsSelectionId = (row, idx) => {
+    const rn = row?.rowNo;
+    if (rn === undefined || rn === null) return String(idx);
+    if ((partsRowNoCounts[rn] || 0) > 1) return `${rn}-${idx}`;
+    return String(rn);
+  };
+
   const fetchThreeCheckboxSelection = async (orderId) => {
     // Always start from a clean slate; any ticks come only from backend response
     setDesignerSelectedRowNos([]);
@@ -237,12 +264,166 @@ export default function DesignQueuePage() {
     }
   };
 
+  const fetchPartsSelection = async (orderId) => {
+    setDesignerPartsSelectedRowNos([]);
+    setProductionPartsSelectedRowNos([]);
+    setMachinePartsSelectedRowNos([]);
+    setInspectionPartsSelectedRowNos([]);
+
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+    if (!raw) return;
+    const auth = JSON.parse(raw);
+    const token = auth?.token;
+    if (!token) return;
+
+    const numericId = String(orderId).replace(/^SF/i, '');
+    if (!numericId) return;
+
+    try {
+      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/parts-selection`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setDesignerPartsSelectedRowNos((data.designerSelectedRowIds || []).map(String));
+        setProductionPartsSelectedRowNos((data.productionSelectedRowIds || []).map(String));
+        setMachinePartsSelectedRowNos((data.machineSelectedRowIds || []).map(String));
+        setInspectionPartsSelectedRowNos((data.inspectionSelectedRowIds || []).map(String));
+      }
+    } catch (error) {
+      console.error('Error fetching parts selection:', error);
+    }
+  };
+
+  const fetchMaterialSelection = async (orderId) => {
+    setDesignerMaterialSelectedRowNos([]);
+    setProductionMaterialSelectedRowNos([]);
+    setMachineMaterialSelectedRowNos([]);
+    setInspectionMaterialSelectedRowNos([]);
+
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+    if (!raw) return;
+    const auth = JSON.parse(raw);
+    const token = auth?.token;
+    if (!token) return;
+
+    const numericId = String(orderId).replace(/^SF/i, '');
+    if (!numericId) return;
+
+    try {
+      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/material-selection`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setDesignerMaterialSelectedRowNos((data.designerSelectedRowIds || []).map(Number));
+        setProductionMaterialSelectedRowNos((data.productionSelectedRowIds || []).map(Number));
+        setMachineMaterialSelectedRowNos((data.machineSelectedRowIds || []).map(Number));
+        setInspectionMaterialSelectedRowNos((data.inspectionSelectedRowIds || []).map(Number));
+      }
+    } catch (error) {
+      console.error('Error fetching material selection:', error);
+    }
+  };
+
   const handleMachineCheckboxChange = (rowNo, checked) => {
     setMachineSelectedRowNos(prev =>
       checked
         ? [...prev, rowNo]
         : prev.filter(n => n !== rowNo)
     );
+  };
+
+  const handleMachinePartsCheckboxChange = (rowNo, checked) => {
+    setMachinePartsSelectedRowNos(prev =>
+      checked
+        ? [...prev, rowNo]
+        : prev.filter(n => n !== rowNo)
+    );
+  };
+
+  const handleMachineMaterialCheckboxChange = (rowNo, checked) => {
+    setMachineMaterialSelectedRowNos(prev =>
+      checked
+        ? [...prev, rowNo]
+        : prev.filter(n => n !== rowNo)
+    );
+  };
+
+  const savePartsSelection = async () => {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+    if (!raw) return;
+    const auth = JSON.parse(raw);
+    const token = auth?.token;
+    if (!token) return;
+
+    const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
+    if (!current) return;
+    const [orderId] = current;
+    const numericId = String(orderId).replace(/^SF/i, '');
+    if (!numericId) return;
+
+    try {
+      setIsSaving(true);
+      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/parts-selection`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          machineSelectedRowIds: machinePartsSelectedRowNos.map(String),
+        }),
+      });
+
+      if (response.ok) {
+        setToast({ message: 'Parts selection saved successfully', type: 'success' });
+      } else {
+        setToast({ message: 'Failed to save parts selection', type: 'error' });
+      }
+    } catch {
+      setToast({ message: 'Error saving parts selection', type: 'error' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const saveMaterialSelection = async () => {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+    if (!raw) return;
+    const auth = JSON.parse(raw);
+    const token = auth?.token;
+    if (!token) return;
+
+    const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
+    if (!current) return;
+    const [orderId] = current;
+    const numericId = String(orderId).replace(/^SF/i, '');
+    if (!numericId) return;
+
+    try {
+      setIsSaving(true);
+      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/material-selection`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          machineSelectedRowIds: machineMaterialSelectedRowNos.map(String),
+        }),
+      });
+
+      if (response.ok) {
+        setToast({ message: 'Material selection saved successfully', type: 'success' });
+      } else {
+        setToast({ message: 'Failed to save material selection', type: 'error' });
+      }
+    } catch {
+      setToast({ message: 'Error saving material selection', type: 'error' });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const saveThreeCheckboxSelection = async () => {
@@ -413,6 +594,9 @@ export default function DesignQueuePage() {
 
                               // Fetch three-checkbox selection data
                               await fetchThreeCheckboxSelection(o.id);
+                              // Fetch isolated Parts/Material selection data
+                              await fetchPartsSelection(o.id);
+                              await fetchMaterialSelection(o.id);
                             } catch {
                             }
                           }}
@@ -626,12 +810,42 @@ export default function DesignQueuePage() {
                             <th className="px-2 py-1">Time / inst.</th>
                             <th className="px-2 py-1">Pierce qty</th>
                             <th className="px-2 py-1">Cut length</th>
+                            <th className="px-2 py-1 text-center">Designer</th>
+                            <th className="px-2 py-1 text-center">Production</th>
+                            <th className="px-2 py-1 text-center">
+                              <input
+                                type="checkbox"
+                                disabled={userRole !== 'MACHINING'}
+                                checked={
+                                  userRole === 'MACHINING' &&
+                                  partsRows.length > 0 &&
+                                  partsRows.every((row, idx) => machinePartsSelectedRowNos.includes(getPartsSelectionId(row, idx)))
+                                }
+                                onChange={(e) => {
+                                  if (userRole !== 'MACHINING') return;
+                                  const checked = e.target.checked;
+                                  const visibleIds = partsRows.map((row, idx) => getPartsSelectionId(row, idx));
+                                  if (checked) {
+                                    setMachinePartsSelectedRowNos((prev) => {
+                                      const next = new Set(prev);
+                                      visibleIds.forEach((id) => next.add(id));
+                                      return Array.from(next);
+                                    });
+                                  } else {
+                                    setMachinePartsSelectedRowNos((prev) =>
+                                      prev.filter((id) => !visibleIds.includes(id))
+                                    );
+                                  }
+                                }}
+                                className={userRole === 'MACHINING' ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}
+                              />
+                            </th>
                           </tr>
                         </thead>
                         <tbody className="text-gray-900 divide-y divide-gray-100">
-                          {partsRows.map((row) => (
-                            <tr key={row.rowNo}>
-                              <td className="px-2 py-1 font-medium">{row.rowNo}</td>
+                          {partsRows.map((row, idx) => (
+                            <tr key={getPartsSelectionId(row, idx)}>
+                              <td className="px-2 py-1 font-medium">{idx + 1}</td>
                               <td className="px-2 py-1">{row.partName}</td>
                               <td className="px-2 py-1">{row.material}</td>
                               <td className="px-2 py-1">{row.thickness}</td>
@@ -641,6 +855,31 @@ export default function DesignQueuePage() {
                               <td className="px-2 py-1 whitespace-nowrap">{row.timePerInstance}</td>
                               <td className="px-2 py-1 text-right">{row.pierceQty}</td>
                               <td className="px-2 py-1 text-right">{row.cuttingLength}</td>
+                              <td className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={designerPartsSelectedRowNos.includes(getPartsSelectionId(row, idx))}
+                                  disabled={true}
+                                  className="cursor-not-allowed opacity-50"
+                                />
+                              </td>
+                              <td className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={productionPartsSelectedRowNos.includes(getPartsSelectionId(row, idx))}
+                                  disabled={true}
+                                  className="cursor-not-allowed opacity-50"
+                                />
+                              </td>
+                              <td className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={machinePartsSelectedRowNos.includes(getPartsSelectionId(row, idx))}
+                                  onChange={(e) => handleMachinePartsCheckboxChange(getPartsSelectionId(row, idx), e.target.checked)}
+                                  disabled={userRole !== 'MACHINING'}
+                                  className={userRole === 'MACHINING' ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}
+                                />
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -654,19 +893,74 @@ export default function DesignQueuePage() {
                             <th className="px-2 py-1">Thk</th>
                             <th className="px-2 py-1">Size X</th>
                             <th className="px-2 py-1">Size Y</th>
-                            <th className="px-2 py-1">Sheet qty.</th>
+                            <th className="px-2 py-1 text-right">Sheet qty.</th>
                             <th className="px-2 py-1">Notes</th>
+                            <th className="px-2 py-1 text-center">Designer</th>
+                            <th className="px-2 py-1 text-center">Production</th>
+                            <th className="px-2 py-1 text-center">
+                              <input
+                                type="checkbox"
+                                disabled={userRole !== 'MACHINING'}
+                                checked={
+                                  userRole === 'MACHINING' &&
+                                  materialRows.length > 0 &&
+                                  materialRows.every((_, idx) => machineMaterialSelectedRowNos.includes(idx))
+                                }
+                                onChange={(e) => {
+                                  if (userRole !== 'MACHINING') return;
+                                  const checked = e.target.checked;
+                                  const visibleIds = materialRows.map((_, idx) => idx);
+                                  if (checked) {
+                                    setMachineMaterialSelectedRowNos((prev) => {
+                                      const next = new Set(prev);
+                                      visibleIds.forEach((id) => next.add(id));
+                                      return Array.from(next);
+                                    });
+                                  } else {
+                                    setMachineMaterialSelectedRowNos((prev) =>
+                                      prev.filter((id) => !visibleIds.includes(id))
+                                    );
+                                  }
+                                }}
+                                className={userRole === 'MACHINING' ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}
+                              />
+                            </th>
                           </tr>
                         </thead>
                         <tbody className="text-gray-900 divide-y divide-gray-100">
                           {materialRows.map((row, idx) => (
-                            <tr key={idx}>
+                            <tr key={`${row?.id ?? 'mat'}-${row?.material ?? ''}-${row?.thickness ?? ''}-${row?.sizeX ?? ''}-${row?.sizeY ?? ''}-${idx}`}>
                               <td className="px-2 py-1">{row.material}</td>
                               <td className="px-2 py-1">{row.thickness}</td>
                               <td className="px-2 py-1">{row.sizeX}</td>
                               <td className="px-2 py-1">{row.sizeY}</td>
                               <td className="px-2 py-1 text-right">{row.sheetQty}</td>
                               <td className="px-2 py-1">{row.notes}</td>
+                              <td className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={designerMaterialSelectedRowNos.includes(idx)}
+                                  disabled={true}
+                                  className="cursor-not-allowed opacity-50"
+                                />
+                              </td>
+                              <td className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={productionMaterialSelectedRowNos.includes(idx)}
+                                  disabled={true}
+                                  className="cursor-not-allowed opacity-50"
+                                />
+                              </td>
+                              <td className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={machineMaterialSelectedRowNos.includes(idx)}
+                                  onChange={(e) => handleMachineMaterialCheckboxChange(idx, e.target.checked)}
+                                  disabled={userRole !== 'MACHINING'}
+                                  className={userRole === 'MACHINING' ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}
+                                />
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -683,6 +977,26 @@ export default function DesignQueuePage() {
                       >
                         {isSaving ? 'Saving…' : 'Save Machine Selection'}
                       </button>
+                      {activePdfTab === 'parts' && (
+                        <button
+                          type="button"
+                          disabled={userRole !== 'MACHINING' || machinePartsSelectedRowNos.length === 0 || isSaving}
+                          onClick={savePartsSelection}
+                          className="flex-1 rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white text-xs py-2"
+                        >
+                          Save Parts Selection
+                        </button>
+                      )}
+                      {activePdfTab === 'material' && (
+                        <button
+                          type="button"
+                          disabled={userRole !== 'MACHINING' || machineMaterialSelectedRowNos.length === 0 || isSaving}
+                          onClick={saveMaterialSelection}
+                          className="flex-1 rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white text-xs py-2"
+                        >
+                          Save Material Selection
+                        </button>
+                      )}
                       <button
                         type="button"
                         disabled={machineSelectedRowNos.length === 0 || isSaving}

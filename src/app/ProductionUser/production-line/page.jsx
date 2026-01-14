@@ -40,6 +40,16 @@ export default function ProductionLinePage() {
   const [designerSelectedRowNos, setDesignerSelectedRowNos] = useState([]);
   const [productionSelectedRowNos, setProductionSelectedRowNos] = useState([]);
   const [machineSelectedRowNos, setMachineSelectedRowNos] = useState([]);
+  // Parts selection (isolated)
+  const [designerPartsSelectedRowNos, setDesignerPartsSelectedRowNos] = useState([]);
+  const [productionPartsSelectedRowNos, setProductionPartsSelectedRowNos] = useState([]);
+  const [machinePartsSelectedRowNos, setMachinePartsSelectedRowNos] = useState([]);
+  const [inspectionPartsSelectedRowNos, setInspectionPartsSelectedRowNos] = useState([]);
+  // Material selection (isolated)
+  const [designerMaterialSelectedRowNos, setDesignerMaterialSelectedRowNos] = useState([]);
+  const [productionMaterialSelectedRowNos, setProductionMaterialSelectedRowNos] = useState([]);
+  const [machineMaterialSelectedRowNos, setMachineMaterialSelectedRowNos] = useState([]);
+  const [inspectionMaterialSelectedRowNos, setInspectionMaterialSelectedRowNos] = useState([]);
   // rows selected by Machine (read-only)
   const [isSendingToMachine, setIsSendingToMachine] = useState(false);
   const [activePdfTab, setActivePdfTab] = useState('subnest');
@@ -180,10 +190,154 @@ export default function ProductionLinePage() {
     }
   };
 
+  const fetchPartsSelection = async (orderId) => {
+    setDesignerPartsSelectedRowNos([]);
+    setProductionPartsSelectedRowNos([]);
+    setMachinePartsSelectedRowNos([]);
+    setInspectionPartsSelectedRowNos([]);
+
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+    if (!raw) return;
+    const auth = JSON.parse(raw);
+    const token = auth?.token;
+    if (!token) return;
+
+    const numericId = String(orderId).replace(/^SF/i, '');
+    if (!numericId) return;
+
+    try {
+      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/parts-selection`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setDesignerPartsSelectedRowNos((data.designerSelectedRowIds || []).map(String));
+        setProductionPartsSelectedRowNos((data.productionSelectedRowIds || []).map(String));
+        setMachinePartsSelectedRowNos((data.machineSelectedRowIds || []).map(String));
+        setInspectionPartsSelectedRowNos((data.inspectionSelectedRowIds || []).map(String));
+      }
+    } catch (error) {
+      console.error('Error fetching parts selection:', error);
+    }
+  };
+
+  const fetchMaterialSelection = async (orderId) => {
+    setDesignerMaterialSelectedRowNos([]);
+    setProductionMaterialSelectedRowNos([]);
+    setMachineMaterialSelectedRowNos([]);
+    setInspectionMaterialSelectedRowNos([]);
+
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+    if (!raw) return;
+    const auth = JSON.parse(raw);
+    const token = auth?.token;
+    if (!token) return;
+
+    const numericId = String(orderId).replace(/^SF/i, '');
+    if (!numericId) return;
+
+    try {
+      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/material-selection`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setDesignerMaterialSelectedRowNos((data.designerSelectedRowIds || []).map(Number));
+        setProductionMaterialSelectedRowNos((data.productionSelectedRowIds || []).map(Number));
+        setMachineMaterialSelectedRowNos((data.machineSelectedRowIds || []).map(Number));
+        setInspectionMaterialSelectedRowNos((data.inspectionSelectedRowIds || []).map(Number));
+      }
+    } catch (error) {
+      console.error('Error fetching material selection:', error);
+    }
+  };
+
   const handleProductionCheckboxChange = (rowNo, checked) => {
     setProductionSelectedRowNos((prev) =>
       checked ? [...prev, rowNo] : prev.filter((n) => n !== rowNo)
     );
+  };
+
+  const handleProductionPartsCheckboxChange = (rowNo, checked) => {
+    setProductionPartsSelectedRowNos((prev) =>
+      checked ? [...prev, rowNo] : prev.filter((n) => n !== rowNo)
+    );
+  };
+
+  const handleProductionMaterialCheckboxChange = (rowNo, checked) => {
+    setProductionMaterialSelectedRowNos((prev) =>
+      checked ? [...prev, rowNo] : prev.filter((n) => n !== rowNo)
+    );
+  };
+
+  const savePartsSelection = async () => {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+    if (!raw) return;
+    const auth = JSON.parse(raw);
+    const token = auth?.token;
+    if (!token) return;
+
+    const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
+    if (!current) return;
+    const [orderId] = current;
+    const numericId = String(orderId).replace(/^SF/i, '');
+    if (!numericId) return;
+
+    try {
+      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/parts-selection`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          productionSelectedRowIds: productionPartsSelectedRowNos.map(String),
+        }),
+      });
+
+      if (response.ok) {
+        setToast({ message: 'Parts selection saved successfully', type: 'success' });
+      } else {
+        setToast({ message: 'Failed to save parts selection', type: 'error' });
+      }
+    } catch (error) {
+      setToast({ message: 'Error saving parts selection', type: 'error' });
+    }
+  };
+
+  const saveMaterialSelection = async () => {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+    if (!raw) return;
+    const auth = JSON.parse(raw);
+    const token = auth?.token;
+    if (!token) return;
+
+    const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
+    if (!current) return;
+    const [orderId] = current;
+    const numericId = String(orderId).replace(/^SF/i, '');
+    if (!numericId) return;
+
+    try {
+      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/material-selection`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          productionSelectedRowIds: productionMaterialSelectedRowNos.map(String),
+        }),
+      });
+
+      if (response.ok) {
+        setToast({ message: 'Material selection saved successfully', type: 'success' });
+      } else {
+        setToast({ message: 'Failed to save material selection', type: 'error' });
+      }
+    } catch (error) {
+      setToast({ message: 'Error saving material selection', type: 'error' });
+    }
   };
 
   const saveThreeCheckboxSelection = async () => {
@@ -282,6 +436,23 @@ export default function ProductionLinePage() {
   }, [orders, searchQuery, statusFilter]);
 
   const statusOptions = ['All', 'In Progress', 'Pending', 'Completed', 'On Hold'];
+
+  const partsRowNoCounts = useMemo(() => {
+    const counts = {};
+    (partsRows || []).forEach((r) => {
+      const k = r?.rowNo;
+      if (k === undefined || k === null) return;
+      counts[k] = (counts[k] || 0) + 1;
+    });
+    return counts;
+  }, [partsRows]);
+
+  const getPartsSelectionId = (row, idx) => {
+    const rn = row?.rowNo;
+    if (rn === undefined || rn === null) return String(idx);
+    if ((partsRowNoCounts[rn] || 0) > 1) return `${rn}-${idx}`;
+    return String(rn);
+  };
 
   return (
     <div className="w-full p-4 sm:p-6">
@@ -453,6 +624,9 @@ export default function ProductionLinePage() {
 
                                 // Fetch three-checkbox selection data
                                 await fetchThreeCheckboxSelection(order.id);
+                                // Fetch isolated Parts/Material selection data
+                                await fetchPartsSelection(order.id);
+                                await fetchMaterialSelection(order.id);
                               } catch {
                               }
                             }}
@@ -732,15 +906,72 @@ export default function ProductionLinePage() {
                             <th className="px-2 py-1">Part name</th>
                             <th className="px-2 py-1">Material</th>
                             <th className="px-2 py-1">Thk</th>
+                            <th className="px-2 py-1 text-center">Designer</th>
+                            <th className="px-2 py-1 text-center">
+                              <input
+                                type="checkbox"
+                                disabled={userRole !== 'PRODUCTION'}
+                                checked={
+                                  userRole === 'PRODUCTION' &&
+                                  partsRows.length > 0 &&
+                                  partsRows.every((row, idx) => productionPartsSelectedRowNos.includes(getPartsSelectionId(row, idx)))
+                                }
+                                onChange={(e) => {
+                                  if (userRole !== 'PRODUCTION') return;
+                                  const checked = e.target.checked;
+                                  const visibleIds = partsRows.map((row, idx) => getPartsSelectionId(row, idx));
+                                  if (checked) {
+                                    setProductionPartsSelectedRowNos((prev) => {
+                                      const next = new Set(prev);
+                                      visibleIds.forEach((id) => next.add(id));
+                                      return Array.from(next);
+                                    });
+                                  } else {
+                                    setProductionPartsSelectedRowNos((prev) =>
+                                      prev.filter((id) => !visibleIds.includes(id))
+                                    );
+                                  }
+                                }}
+                                className={userRole === 'PRODUCTION' ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}
+                              />
+                            </th>
+                            <th className="px-2 py-1 text-center">Machine</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {partsRows.map((row) => (
-                            <tr key={row.rowNo}>
-                              <td className="px-2 py-1">{row.rowNo}</td>
+                          {partsRows.map((row, idx) => (
+                            <tr key={getPartsSelectionId(row, idx)}>
+                              <td className="px-2 py-1">{idx + 1}</td>
                               <td className="px-2 py-1">{row.partName}</td>
                               <td className="px-2 py-1">{row.material}</td>
                               <td className="px-2 py-1">{row.thickness}</td>
+                              <td className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={designerPartsSelectedRowNos.includes(getPartsSelectionId(row, idx))}
+                                  disabled={true}
+                                  className="cursor-not-allowed opacity-50"
+                                />
+                              </td>
+                              <td className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={productionPartsSelectedRowNos.includes(getPartsSelectionId(row, idx))}
+                                  onChange={(e) =>
+                                    handleProductionPartsCheckboxChange(getPartsSelectionId(row, idx), e.target.checked)
+                                  }
+                                  disabled={userRole !== 'PRODUCTION'}
+                                  className={userRole === 'PRODUCTION' ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}
+                                />
+                              </td>
+                              <td className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={machinePartsSelectedRowNos.includes(getPartsSelectionId(row, idx))}
+                                  disabled={true}
+                                  className="cursor-not-allowed opacity-50"
+                                />
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -754,17 +985,72 @@ export default function ProductionLinePage() {
                             <th className="px-2 py-1">Thk</th>
                             <th className="px-2 py-1">Size X</th>
                             <th className="px-2 py-1">Size Y</th>
-                            <th className="px-2 py-1">Qty</th>
+                            <th className="px-2 py-1 text-right">Qty</th>
+                            <th className="px-2 py-1 text-center">Designer</th>
+                            <th className="px-2 py-1 text-center">
+                              <input
+                                type="checkbox"
+                                disabled={userRole !== 'PRODUCTION'}
+                                checked={
+                                  userRole === 'PRODUCTION' &&
+                                  materialRows.length > 0 &&
+                                  materialRows.every((_, idx) => productionMaterialSelectedRowNos.includes(idx))
+                                }
+                                onChange={(e) => {
+                                  if (userRole !== 'PRODUCTION') return;
+                                  const checked = e.target.checked;
+                                  const visibleIds = materialRows.map((_, idx) => idx);
+                                  if (checked) {
+                                    setProductionMaterialSelectedRowNos((prev) => {
+                                      const next = new Set(prev);
+                                      visibleIds.forEach((id) => next.add(id));
+                                      return Array.from(next);
+                                    });
+                                  } else {
+                                    setProductionMaterialSelectedRowNos((prev) =>
+                                      prev.filter((id) => !visibleIds.includes(id))
+                                    );
+                                  }
+                                }}
+                                className={userRole === 'PRODUCTION' ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}
+                              />
+                            </th>
+                            <th className="px-2 py-1 text-center">Machine</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                           {materialRows.map((row, idx) => (
-                            <tr key={idx}>
+                            <tr key={`${row?.id ?? 'mat'}-${row?.material ?? ''}-${row?.thickness ?? ''}-${row?.sizeX ?? ''}-${row?.sizeY ?? ''}-${idx}`}>
                               <td className="px-2 py-1">{row.material}</td>
                               <td className="px-2 py-1">{row.thickness}</td>
                               <td className="px-2 py-1">{row.sizeX}</td>
                               <td className="px-2 py-1">{row.sizeY}</td>
-                              <td className="px-2 py-1">{row.sheetQty}</td>
+                              <td className="px-2 py-1 text-right">{row.sheetQty}</td>
+                              <td className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={designerMaterialSelectedRowNos.includes(idx)}
+                                  disabled={true}
+                                  className="cursor-not-allowed opacity-50"
+                                />
+                              </td>
+                              <td className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={productionMaterialSelectedRowNos.includes(idx)}
+                                  onChange={(e) => handleProductionMaterialCheckboxChange(idx, e.target.checked)}
+                                  disabled={userRole !== 'PRODUCTION'}
+                                  className={userRole === 'PRODUCTION' ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}
+                                />
+                              </td>
+                              <td className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={machineMaterialSelectedRowNos.includes(idx)}
+                                  disabled={true}
+                                  className="cursor-not-allowed opacity-50"
+                                />
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -772,17 +1058,39 @@ export default function ProductionLinePage() {
                     )}
                   </div>
                   <div className="p-3 border-t border-gray-200 flex items-center justify-end gap-3 text-xs">
-                    <button
-                      type="button"
-                      disabled={productionSelectedRowNos.length === 0}
-                      onClick={async () => {
-                        await ensureMachinesLoaded();
-                        setShowSelectMachineModal(true);
-                      }}
-                      className="rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white py-2 px-4"
-                    >
-                      Select Machine
-                    </button>
+                    {activePdfTab === 'subnest' && (
+                      <button
+                        type="button"
+                        disabled={productionSelectedRowNos.length === 0}
+                        onClick={async () => {
+                          await ensureMachinesLoaded();
+                          setShowSelectMachineModal(true);
+                        }}
+                        className="rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white py-2 px-4"
+                      >
+                        Select Machine
+                      </button>
+                    )}
+                    {activePdfTab === 'parts' && (
+                      <button
+                        type="button"
+                        disabled={userRole !== 'PRODUCTION' || productionPartsSelectedRowNos.length === 0}
+                        onClick={savePartsSelection}
+                        className="rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white py-2 px-4"
+                      >
+                        Save Parts Selection
+                      </button>
+                    )}
+                    {activePdfTab === 'material' && (
+                      <button
+                        type="button"
+                        disabled={userRole !== 'PRODUCTION' || productionMaterialSelectedRowNos.length === 0}
+                        onClick={saveMaterialSelection}
+                        className="rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white py-2 px-4"
+                      >
+                        Save Material Selection
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

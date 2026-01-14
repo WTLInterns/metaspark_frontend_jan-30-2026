@@ -139,6 +139,16 @@ export default function DesignQueuePage() {
   const [selectedSubnestRowNos, setSelectedSubnestRowNos] = useState([]);
   const [selectedPartsRowNos, setSelectedPartsRowNos] = useState([]);
   const [selectedMaterialRowNos, setSelectedMaterialRowNos] = useState([]);
+  // Parts selection (isolated)
+  const [designerPartsSelectedRowNos, setDesignerPartsSelectedRowNos] = useState([]);
+  const [productionPartsSelectedRowNos, setProductionPartsSelectedRowNos] = useState([]);
+  const [machinePartsSelectedRowNos, setMachinePartsSelectedRowNos] = useState([]);
+  const [inspectionPartsSelectedRowNos, setInspectionPartsSelectedRowNos] = useState([]);
+  // Material selection (isolated)
+  const [designerMaterialSelectedRowNos, setDesignerMaterialSelectedRowNos] = useState([]);
+  const [productionMaterialSelectedRowNos, setProductionMaterialSelectedRowNos] = useState([]);
+  const [machineMaterialSelectedRowNos, setMachineMaterialSelectedRowNos] = useState([]);
+  const [inspectionMaterialSelectedRowNos, setInspectionMaterialSelectedRowNos] = useState([]);
   const [designerSelectedRowNos, setDesignerSelectedRowNos] = useState([]);
   const [productionSelectedRowNos, setProductionSelectedRowNos] = useState([]);
   const [machineSelectedRowNos, setMachineSelectedRowNos] = useState([]);
@@ -305,6 +315,157 @@ export default function DesignQueuePage() {
     return map[s] || 'bg-gray-100 text-gray-700';
   };
 
+  const partsRowNoCounts = useMemo(() => {
+    const counts = {};
+    (partsRows || []).forEach((r) => {
+      const k = r?.rowNo;
+      if (k === undefined || k === null) return;
+      counts[k] = (counts[k] || 0) + 1;
+    });
+    return counts;
+  }, [partsRows]);
+
+  const getPartsSelectionId = (row, idx) => {
+    const rn = row?.rowNo;
+    if (rn === undefined || rn === null) return String(idx);
+    if ((partsRowNoCounts[rn] || 0) > 1) return `${rn}-${idx}`;
+    return String(rn);
+  };
+
+  const fetchPartsSelection = async (orderId) => {
+    setDesignerPartsSelectedRowNos([]);
+    setProductionPartsSelectedRowNos([]);
+    setMachinePartsSelectedRowNos([]);
+    setInspectionPartsSelectedRowNos([]);
+
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+    if (!raw) return;
+    const auth = JSON.parse(raw);
+    const token = auth?.token;
+    if (!token) return;
+
+    const numericId = String(orderId).replace(/^SF/i, '');
+    if (!numericId) return;
+
+    try {
+      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/parts-selection`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setDesignerPartsSelectedRowNos((data.designerSelectedRowIds || []).map(String));
+        setProductionPartsSelectedRowNos((data.productionSelectedRowIds || []).map(String));
+        setMachinePartsSelectedRowNos((data.machineSelectedRowIds || []).map(String));
+        setInspectionPartsSelectedRowNos((data.inspectionSelectedRowIds || []).map(String));
+      }
+    } catch (error) {
+      console.error('Error fetching parts selection:', error);
+    }
+  };
+
+  const fetchMaterialSelection = async (orderId) => {
+    setDesignerMaterialSelectedRowNos([]);
+    setProductionMaterialSelectedRowNos([]);
+    setMachineMaterialSelectedRowNos([]);
+    setInspectionMaterialSelectedRowNos([]);
+
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+    if (!raw) return;
+    const auth = JSON.parse(raw);
+    const token = auth?.token;
+    if (!token) return;
+
+    const numericId = String(orderId).replace(/^SF/i, '');
+    if (!numericId) return;
+
+    try {
+      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/material-selection`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setDesignerMaterialSelectedRowNos((data.designerSelectedRowIds || []).map(String));
+        setProductionMaterialSelectedRowNos((data.productionSelectedRowIds || []).map(String));
+        setMachineMaterialSelectedRowNos((data.machineSelectedRowIds || []).map(String));
+        setInspectionMaterialSelectedRowNos((data.inspectionSelectedRowIds || []).map(String));
+      }
+    } catch (error) {
+      console.error('Error fetching material selection:', error);
+    }
+  };
+
+  const savePartsSelection = async () => {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+    if (!raw) return;
+    const auth = JSON.parse(raw);
+    const token = auth?.token;
+    if (!token) return;
+
+    const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
+    const orderId = current ? current[0] : currentPdfOrderId;
+    if (!orderId) return;
+
+    const numericId = String(orderId).replace(/^SF/i, '');
+    if (!numericId) return;
+
+    try {
+      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/parts-selection`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          designerSelectedRowIds: designerPartsSelectedRowNos,
+        }),
+      });
+
+      if (response.ok) {
+        setToast({ message: 'Parts selection saved successfully', type: 'success' });
+      } else {
+        setToast({ message: 'Failed to save parts selection', type: 'error' });
+      }
+    } catch {
+      setToast({ message: 'Error saving parts selection', type: 'error' });
+    }
+  };
+
+  const saveMaterialSelection = async () => {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+    if (!raw) return;
+    const auth = JSON.parse(raw);
+    const token = auth?.token;
+    if (!token) return;
+
+    const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
+    const orderId = current ? current[0] : currentPdfOrderId;
+    if (!orderId) return;
+
+    const numericId = String(orderId).replace(/^SF/i, '');
+    if (!numericId) return;
+
+    try {
+      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/material-selection`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          designerSelectedRowIds: designerMaterialSelectedRowNos,
+        }),
+      });
+
+      if (response.ok) {
+        setToast({ message: 'Material selection saved successfully', type: 'success' });
+      } else {
+        setToast({ message: 'Failed to save material selection', type: 'error' });
+      }
+    } catch {
+      setToast({ message: 'Error saving material selection', type: 'error' });
+    }
+  };
+
   const openPdfModalForAttachment = async (attachmentUrl, orderId) => {
     setPdfModalUrl(attachmentUrl);
     setCurrentPdfOrderId(orderId || null);
@@ -315,6 +476,10 @@ export default function DesignQueuePage() {
     setSelectedSubnestRowNos([]);
     setSelectedPartsRowNos([]);
     setSelectedMaterialRowNos([]);
+    setDesignerPartsSelectedRowNos([]);
+    setDesignerMaterialSelectedRowNos([]);
+
+    setIsRowsLoading(true);
 
     const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
     if (!raw) return;
@@ -322,7 +487,6 @@ export default function DesignQueuePage() {
       const auth = JSON.parse(raw);
       const token = auth?.token;
       if (!token) return;
-      setIsRowsLoading(true);
 
       const baseSubnest = `http://localhost:8080/api/pdf/subnest/by-url?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
       const baseParts = `http://localhost:8080/api/pdf/subnest/parts/by-url?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
@@ -347,6 +511,11 @@ export default function DesignQueuePage() {
       if (materialRes.ok) {
         const data = await materialRes.json();
         setMaterialRows(Array.isArray(data) ? data : []);
+      }
+
+      if (orderId) {
+        await fetchPartsSelection(orderId);
+        await fetchMaterialSelection(orderId);
       }
     } finally {
       setIsRowsLoading(false);
@@ -498,8 +667,13 @@ export default function DesignQueuePage() {
                 setPartsRows([]);
                 setMaterialRows([]);
                 setSelectedSubnestRowNos([]);
+                setSelectedPartsRowNos([]);
+                setSelectedMaterialRowNos([]);
+                setDesignerPartsSelectedRowNos([]);
+                setDesignerMaterialSelectedRowNos([]);
               }}
             />
+
             <div className="absolute inset-0 flex items-center justify-center p-4">
               <div className="w-full max-w-6xl h-[85vh] bg-white rounded-lg shadow-xl border border-gray-200 flex flex-col overflow-hidden">
                 <div className="flex items-center justify-between p-3 border-b border-gray-200">
@@ -514,6 +688,8 @@ export default function DesignQueuePage() {
                       setSelectedSubnestRowNos([]);
                       setSelectedPartsRowNos([]);
                       setSelectedMaterialRowNos([]);
+                      setDesignerPartsSelectedRowNos([]);
+                      setDesignerMaterialSelectedRowNos([]);
                     }}
                     className="text-gray-500 hover:text-gray-700 text-xl leading-none"
                   >
@@ -646,16 +822,44 @@ export default function DesignQueuePage() {
                               <th className="px-2 py-1">Time / inst.</th>
                               <th className="px-2 py-1">Pierce qty</th>
                               <th className="px-2 py-1">Cut length</th>
-                              <th className="px-2 py-1 text-center">Select</th>
+                              <th className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  disabled={userRole !== 'DESIGN'}
+                                  checked={
+                                    userRole === 'DESIGN' &&
+                                    partsRows.length > 0 &&
+                                    partsRows.every((row, idx) => designerPartsSelectedRowNos.includes(getPartsSelectionId(row, idx)))
+                                  }
+                                  onChange={(e) => {
+                                    if (userRole !== 'DESIGN') return;
+                                    const checked = e.target.checked;
+                                    const visibleIds = partsRows.map((row, idx) => getPartsSelectionId(row, idx));
+                                    if (checked) {
+                                      setDesignerPartsSelectedRowNos((prev) => {
+                                        const next = new Set(prev);
+                                        visibleIds.forEach((id) => next.add(id));
+
+                                        return Array.from(next);
+                                      });
+                                    } else {
+                                      setDesignerPartsSelectedRowNos((prev) =>
+                                        prev.filter((id) => !visibleIds.includes(id))
+                                      );
+                                    }
+                                  }}
+                                />
+                              </th>
                             </tr>
                           </thead>
                           <tbody className="text-gray-900 divide-y divide-gray-100">
-                            {partsRows.map((row) => (
-                              <tr key={row.rowNo}>
-                                <td className="px-2 py-1 font-medium">{row.rowNo}</td>
+                            {partsRows.map((row, idx) => (
+                              <tr key={getPartsSelectionId(row, idx)}>
+                                <td className="px-2 py-1 font-medium">{idx + 1}</td>
                                 <td className="px-2 py-1">{row.partName}</td>
                                 <td className="px-2 py-1">{row.material}</td>
                                 <td className="px-2 py-1">{row.thickness}</td>
+
                                 <td className="px-2 py-1 text-right">{row.requiredQty}</td>
                                 <td className="px-2 py-1 text-right">{row.placedQty}</td>
                                 <td className="px-2 py-1 text-right">{row.weightKg}</td>
@@ -665,16 +869,18 @@ export default function DesignQueuePage() {
                                 <td className="px-2 py-1 text-center">
                                   <input
                                     type="checkbox"
-                                    checked={selectedPartsRowNos.includes(row.rowNo)}
+                                    checked={designerPartsSelectedRowNos.includes(getPartsSelectionId(row, idx))}
                                     onChange={(e) => {
                                       const checked = e.target.checked;
-                                      setSelectedPartsRowNos((prev) =>
+                                      const id = getPartsSelectionId(row, idx);
+                                      setDesignerPartsSelectedRowNos((prev) =>
                                         checked
-                                          ? [...prev, row.rowNo]
-                                          : prev.filter((n) => n !== row.rowNo)
+                                          ? [...prev, id]
+                                          : prev.filter((n) => n !== id)
                                       );
                                     }}
                                   />
+
                                 </td>
                               </tr>
                             ))}
@@ -689,14 +895,40 @@ export default function DesignQueuePage() {
                               <th className="px-2 py-1">Thk</th>
                               <th className="px-2 py-1">Size X</th>
                               <th className="px-2 py-1">Size Y</th>
-                              <th className="px-2 py-1">Sheet qty.</th>
+                              <th className="px-2 py-1 text-right">Sheet qty.</th>
                               <th className="px-2 py-1">Notes</th>
-                              <th className="px-2 py-1 text-center">Select</th>
+                              <th className="px-2 py-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  disabled={userRole !== 'DESIGN'}
+                                  checked={
+                                    userRole === 'DESIGN' &&
+                                    materialRows.length > 0 &&
+                                    materialRows.every((_, idx) => designerMaterialSelectedRowNos.includes(idx))
+                                  }
+                                  onChange={(e) => {
+                                    if (userRole !== 'DESIGN') return;
+                                    const checked = e.target.checked;
+                                    const visibleIds = materialRows.map((_, idx) => idx);
+                                    if (checked) {
+                                      setDesignerMaterialSelectedRowNos((prev) => {
+                                        const next = new Set(prev);
+                                        visibleIds.forEach((id) => next.add(id));
+                                        return Array.from(next);
+                                      });
+                                    } else {
+                                      setDesignerMaterialSelectedRowNos((prev) =>
+                                        prev.filter((id) => !visibleIds.includes(id))
+                                      );
+                                    }
+                                  }}
+                                />
+                              </th>
                             </tr>
                           </thead>
                           <tbody className="text-gray-900 divide-y divide-gray-100">
                             {materialRows.map((row, idx) => (
-                              <tr key={idx}>
+                              <tr key={`${row?.id ?? 'mat'}-${row?.material ?? ''}-${row?.thickness ?? ''}-${row?.sizeX ?? ''}-${row?.sizeY ?? ''}-${idx}`}>
                                 <td className="px-2 py-1">{row.material}</td>
                                 <td className="px-2 py-1">{row.thickness}</td>
                                 <td className="px-2 py-1">{row.sizeX}</td>
@@ -706,10 +938,10 @@ export default function DesignQueuePage() {
                                 <td className="px-2 py-1 text-center">
                                   <input
                                     type="checkbox"
-                                    checked={selectedMaterialRowNos.includes(idx)}
+                                    checked={designerMaterialSelectedRowNos.includes(idx)}
                                     onChange={(e) => {
                                       const checked = e.target.checked;
-                                      setSelectedMaterialRowNos((prev) =>
+                                      setDesignerMaterialSelectedRowNos((prev) =>
                                         checked
                                           ? [...prev, idx]
                                           : prev.filter((n) => n !== idx)
@@ -726,6 +958,30 @@ export default function DesignQueuePage() {
                   </div>
                 </div>
                 <div className="p-3 border-t border-gray-200">
+                  {(activePdfTab === 'parts' || activePdfTab === 'material') && (
+                    <div className="flex gap-2 mb-2">
+                      {activePdfTab === 'parts' && (
+                        <button
+                          type="button"
+                          disabled={userRole !== 'DESIGN' || designerPartsSelectedRowNos.length === 0 || isGenerating}
+                          onClick={savePartsSelection}
+                          className="flex-1 rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white text-xs py-2"
+                        >
+                          Save Parts Selection
+                        </button>
+                      )}
+                      {activePdfTab === 'material' && (
+                        <button
+                          type="button"
+                          disabled={userRole !== 'DESIGN' || designerMaterialSelectedRowNos.length === 0 || isGenerating}
+                          onClick={saveMaterialSelection}
+                          className="flex-1 rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white text-xs py-2"
+                        >
+                          Save Material Selection
+                        </button>
+                      )}
+                    </div>
+                  )}
                   <button
                     type="button"
                     disabled={selectedSubnestRowNos.length === 0 || isGenerating}

@@ -44,7 +44,11 @@ export default function InspectionQueuePage() {
         try {
             const data = await orderApi.getAllOrders();
 
-            const transformed = (data || []).map((order) => {
+            const sorted = Array.isArray(data)
+                ? data.slice().sort((a, b) => (b.orderId || 0) - (a.orderId || 0))
+                : [];
+
+            const transformed = sorted.map((order) => {
                 const customer = order.customers && order.customers[0];
                 const customerName = customer
                     ? (customer.companyName || customer.customerName || 'Unknown Customer')

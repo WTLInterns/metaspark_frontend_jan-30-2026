@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useAuth } from '@/components/AuthProvider';
 import { 
   FiHome, 
   FiInbox, 
@@ -14,6 +15,7 @@ import {
   FiFileText,
   FiTruck,
   FiCheckCircle,
+  FiLogOut,
   FiChevronDown,
   FiChevronUp
 } from 'react-icons/fi';
@@ -113,6 +115,9 @@ export default function Sidebar({ user }) {
   const [expandedItems, setExpandedItems] = useState({});
   const [menuItems, setMenuItems] = useState([]);
   const pathname = usePathname();
+  const { logout } = useAuth();
+
+  const isAdminSidebar = pathname?.startsWith('/AdminUser');
 
   useEffect(() => {
     if (user) {
@@ -142,6 +147,20 @@ export default function Sidebar({ user }) {
       <div className="h-16 flex-shrink-0 flex items-center px-6 border-b border-gray-200">
         <h1 className="text-xl font-bold text-blue-600">MetaSpark</h1>
       </div>
+
+      {/* Logout (non-admin roles): directly under header/logo */}
+      {!isAdminSidebar && (
+        <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0">
+          <button
+            type="button"
+            onClick={logout}
+            className="w-full flex items-center p-3 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50"
+          >
+            <FiLogOut className="h-5 w-5" />
+            <span className="ml-3">Logout</span>
+          </button>
+        </div>
+      )}
       
       {/* Navigation */}
       <div className="flex-1 flex flex-col min-h-0">
@@ -197,7 +216,7 @@ export default function Sidebar({ user }) {
           </ul>
         </nav>
       </div>
-      
+
       {/* User section */}
       <div className="p-4 border-t border-gray-200 flex-shrink-0">
         <div className="flex items-center p-2 rounded-lg hover:bg-gray-50">
@@ -206,7 +225,7 @@ export default function Sidebar({ user }) {
           </div>
           <div className="ml-3">
             <p className="text-sm font-medium text-gray-900">
-              {user?.name || user?.email?.split('@')[0] || 'User'}
+              {user?.name || user?.email?.split('@')[0] || ''}
             </p>
             <p className="text-xs text-gray-500">
               {user?.email || user.role}
@@ -214,6 +233,20 @@ export default function Sidebar({ user }) {
           </div>
         </div>
       </div>
+
+      {/* Logout pinned at bottom */}
+      {isAdminSidebar && (
+        <div className="px-4 pb-4 flex-shrink-0">
+          <button
+            type="button"
+            onClick={logout}
+            className="w-full flex items-center p-3 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50"
+          >
+            <FiLogOut className="h-5 w-5" />
+            <span className="ml-3">Logout</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

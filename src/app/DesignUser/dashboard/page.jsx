@@ -7,6 +7,7 @@ import { useCustomerProductData } from './useCustomerProductData';
 import * as orderApi from '../orders/api';
 import toast from 'react-hot-toast';
 import { getVisibleReportDefsForCurrentUser } from '@/utils/reportVisibility';
+import { downloadReport as downloadReportUtil } from '@/utils/downloadReport';
 import StatusHistoryTimeline from '@/components/StatusHistoryTimeline';
 
 function DetailsPanel({ order, onClose, onUpdateOrder }) {
@@ -54,6 +55,11 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
   }, [order?.designProgress, order?.productionProgress, order?.machiningProgress, order?.inspectionProgress]);
 
   const visibleReports = getVisibleReportDefsForCurrentUser();
+
+  const downloadReport = (type) => {
+    if (typeof downloadReportUtil !== 'function') return;
+    return downloadReportUtil({ orderDisplayId: order.id, type });
+  };
 
   const getStatusBadgeClasses = (status) => {
     const base = 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium';
@@ -677,7 +683,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
                   <span className="text-black">{r.label}</span>
                   <button
                     type="button"
-                    onClick={() => downloadReport(r.type)}
+                    onClick={() => downloadReport?.(r.type)}
                     className="text-black hover:text-black"
                   >
                     ⬇

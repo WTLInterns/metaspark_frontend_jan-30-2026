@@ -1,7 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import { Bell, Menu, Search, X } from 'lucide-react';
-import UserMenu from './UserMenu';
 
 export default function Topbar({ onMenuClick }) {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -89,7 +88,6 @@ export default function Topbar({ onMenuClick }) {
 
             {/* User menu */}
             <div className="ml-2">
-              <UserMenu />
             </div>
           </div>
         </div>

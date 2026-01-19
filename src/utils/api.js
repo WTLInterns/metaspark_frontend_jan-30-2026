@@ -147,6 +147,7 @@ const apiRequest = async (endpoint, options = {}) => {
         if (typeof window !== 'undefined') {
           localStorage.removeItem('swiftflow-user');
           localStorage.removeItem('swiftflow-token');
+          localStorage.removeItem('auth-token');
           window.location.href = '/login';
         }
       }
@@ -185,12 +186,14 @@ const attemptTokenRefresh = async () => {
       // If refresh failed, clear the stored data
       localStorage.removeItem('swiftflow-user');
       localStorage.removeItem('swiftflow-token');
+      localStorage.removeItem('auth-token');
       return false;
     }
   } catch (error) {
     console.error('Token refresh failed:', error);
     localStorage.removeItem('swiftflow-user');
     localStorage.removeItem('swiftflow-token');
+    localStorage.removeItem('auth-token');
     return false;
   }
 };

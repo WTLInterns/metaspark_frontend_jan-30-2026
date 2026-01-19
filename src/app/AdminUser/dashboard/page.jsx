@@ -10,9 +10,11 @@ import { createProduct as createProductApi } from '../products/productService';
 import toast from 'react-hot-toast';
 import { createHeaders } from '@/utils/api';
 import { getVisibleReportDefsForCurrentUser } from '@/utils/reportVisibility';
+import { downloadReport as downloadReportUtil } from '@/utils/downloadReport';
 import StatusHistoryTimeline from '@/components/StatusHistoryTimeline';
 
 function DetailsPanel({ order, onClose, onUpdateOrder }) {
+
   // Add state for the status update form
   const [newStatus, setNewStatus] = useState('');
   const [comment, setComment] = useState('');
@@ -82,57 +84,9 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
 
   const visibleReports = getVisibleReportDefsForCurrentUser();
 
-  const downloadReport = async (type) => {
-    try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
-      const orderId = order.id.replace('SF', '');
-
-      const endpointByType = {
-        design: `/api/orders/${orderId}/reports/design`,
-        production: `/api/orders/${orderId}/reports/production`,
-        machinists: `/api/orders/${orderId}/reports/machinists`,
-        inspection: `/api/orders/${orderId}/reports/inspection`,
-      };
-
-      const typeLabelByType = {
-        design: 'Design',
-        production: 'Production',
-        machinists: 'Machinists',
-        inspection: 'Inspection',
-      };
-
-      const endpoint = endpointByType[type];
-      const typeLabel = typeLabelByType[type];
-      if (!endpoint || !typeLabel) {
-        throw new Error(`Unknown report type: ${type}`);
-      }
-
-      const headers = createHeaders({});
-      delete headers['Content-Type'];
-      headers.Accept = 'application/pdf';
-
-      const res = await fetch(`${baseUrl}${endpoint}`, {
-        method: 'GET',
-        headers,
-      });
-
-      if (!res.ok) {
-        const msg = await res.text().catch(() => 'Failed to download report');
-        throw new Error(msg || 'Failed to download report');
-      }
-
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${order.id}_${typeLabel}_Report.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Report download failed:', error);
-    }
+  const downloadReport = (type) => {
+    if (typeof downloadReportUtil !== 'function') return;
+    return downloadReportUtil({ orderDisplayId: order.id, type });
   };
 
   const getStatusBadgeClasses = (status) => {
@@ -674,7 +628,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
                   <span className="text-black">{r.label}</span>
                   <button
                     type="button"
-                    onClick={() => downloadReport(r.type)}
+                    onClick={() => downloadReport?.(r.type)}
                     className="text-black hover:text-black"
                   >
                     ⬇

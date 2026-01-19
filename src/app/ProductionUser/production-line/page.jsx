@@ -70,7 +70,11 @@ export default function ProductionLinePage() {
       try {
         const orders = await orderApi.getAllOrders();
 
-        const transformed = orders.map(order => {
+        const sorted = Array.isArray(orders)
+          ? orders.slice().sort((a, b) => (b.orderId || 0) - (a.orderId || 0))
+          : [];
+
+        const transformed = sorted.map(order => {
           const product = (order.products && order.products[0]) || {};
 
           return {

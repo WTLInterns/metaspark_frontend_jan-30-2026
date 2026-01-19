@@ -75,3 +75,14 @@ export const getAllOrders = async () => {
   });
   return handleResponse(response);
 };
+
+// Delete order by ID (Admin only)
+export const deleteOrder = async (orderId) => {
+  const response = await fetch(`${API_BASE_URL}/delete/${orderId}`, {
+    method: 'DELETE',
+    headers: createHeaders(),
+  });
+
+  if (response.status === 204) return;
+  return handleResponse(response);
+};

@@ -117,6 +117,25 @@ export default function AllOrdersPage() {
     }
   };
 
+  const handleDeleteOrder = async (order) => {
+    const rawId = order?.id ? String(order.id).replace('SF', '') : '';
+    const orderId = Number(rawId);
+    if (!orderId) {
+      toast.error('Invalid order id');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete order ${order.id}?`)) return;
+
+    try {
+      await orderApi.deleteOrder(orderId);
+      setRows((prev) => prev.filter((o) => o.id !== order.id));
+      toast.success(`Order ${order.id} deleted`);
+    } catch (e) {
+      toast.error(e?.message || 'Failed to delete order');
+    }
+  };
+
   // Fetch orders from backend on mount
   useEffect(() => {
     const load = async () => {
@@ -393,11 +412,7 @@ export default function AllOrdersPage() {
           ) : error ? (
             <div className="mt-4 text-sm text-red-600">{error}</div>
           ) : (
-            <OrdersTable rows={filtered} onView={handleView} onEdit={handleEdit} onDelete={(order) => {
-              if (confirm(`Are you sure you want to delete order ${order.id}?`)) {
-                console.log('Delete order:', order);
-              }
-            }} />
+            <OrdersTable rows={filtered} onView={handleView} onEdit={handleEdit} onDelete={handleDeleteOrder} />
           )}
         </div>
 

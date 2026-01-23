@@ -12,6 +12,7 @@ import { createHeaders } from '@/utils/api';
 import { getVisibleReportDefsForCurrentUser } from '@/utils/reportVisibility';
 import { downloadReport as downloadReportUtil } from '@/utils/downloadReport';
 import StatusHistoryTimeline from '@/components/StatusHistoryTimeline';
+import OrderDetailsModal from '@/components/OrderDetailsModal';
 
 function DetailsPanel({ order, onClose, onUpdateOrder }) {
 
@@ -36,20 +37,24 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [selectedAttachment, setSelectedAttachment] = useState(null);
 
+  const resolvedOrderId = order?.orderId ?? order?.id ?? order?._id ?? '';
+  const numericOrderId = resolvedOrderId
+    ? String(resolvedOrderId).replace('SF', '')
+    : '';
+
   useEffect(() => {
     const fetchStatusHistory = async () => {
       try {
         setLoadingHistory(true);
-        const orderId = order?.id ? order.id.replace('SF', '') : '';
-        if (!orderId) {
+        if (!numericOrderId) {
           setStatusHistory([]);
           return;
-        }
+        };
 
         const authData = JSON.parse(localStorage.getItem('swiftflow-user'));
         const token = authData?.token;
 
-        const response = await fetch(`http://localhost:8080/status/order/${orderId}`, {
+        const response = await fetch(`http://localhost:8080/status/order/${numericOrderId}`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -71,7 +76,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
     };
 
     fetchStatusHistory();
-  }, [order?.id]);
+  }, [numericOrderId]);
 
   useEffect(() => {
     setStageProgress({
@@ -86,7 +91,11 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
 
   const downloadReport = (type) => {
     if (typeof downloadReportUtil !== 'function') return;
-    return downloadReportUtil({ orderDisplayId: order.id, type });
+    if (!resolvedOrderId) {
+      console.error('Cannot download report, missing order id');
+      return;
+    }
+    return downloadReportUtil({ orderDisplayId: resolvedOrderId, type });
   };
 
   const getStatusBadgeClasses = (status) => {
@@ -151,7 +160,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
     setIsSavingStageProgress(true);
 
     try {
-      const orderId = order.id.replace('SF', '');
+      const orderId = numericOrderId;
       const authData = JSON.parse(localStorage.getItem('swiftflow-user'));
       const token = authData?.token;
 
@@ -238,11 +247,14 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
         formData.append('attachment', attachment);
       }
 
-      const orderId = order.id.replace('SF', '');
+      if (!numericOrderId) {
+        setSubmitError('Invalid order id for status update');
+        return;
+      }
       const authData = JSON.parse(localStorage.getItem('swiftflow-user'));
       const token = authData?.token;
 
-      const response = await fetch(`http://localhost:8080/status/create/${orderId}`, {
+      const response = await fetch(`http://localhost:8080/status/create/${numericOrderId}`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -260,7 +272,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
       toast.success('Status updated successfully!');
 
       if (onUpdateOrder) {
-        onUpdateOrder(orderId, newStatus);
+        onUpdateOrder(numericOrderId, newStatus);
       }
     } catch (error) {
       console.error('Error updating status:', error);
@@ -276,7 +288,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
         {/* Header */}
         <div className="sticky top-0 bg-gray-50 border-b border-gray-200 p-4 flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-semibold text-black">Order #{order.id}</h2>
+            <h2 className="text-xl font-semibold text-black">Order #{resolvedOrderId || '—'}</h2>
             <p className="text-sm text-black">Track the progress of the order from inquiry to completion.</p>
           </div>
           <button onClick={onClose} className="px-3 py-1.5 rounded-md border border-gray-300 hover:bg-gray-100">Close</button>
@@ -445,7 +457,16 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
               </div>
               <div className="mb-4">
                 <div className="text-xs text-black mb-1">Products</div>
-                <div className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-black">{order.products}</div>
+                <div className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-black">
+                  {Array.isArray(order.products)
+                    ? order.products
+                        .map((p) => p && (p.productName || p.productCode))
+                        .filter(Boolean)
+                        .join(', ')
+                    : order.products && typeof order.products === 'object'
+                      ? (order.products.productName || order.products.productCode || 'No Product')
+                      : (order.products || 'No Product')}
+                </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -534,21 +555,21 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
               })()}
             </section>
 
-            <section className="bg-white border border-gray-200 rounded-lg p-4">
+            <section className="bg-white border border-gray-200 rounded-lg p-4 max-w-4xl mx-auto max-h-[80vh] flex flex-col overflow-hidden">
               <h3 className="font-semibold text-black">Update Order Status</h3>
               {submitError && (
                 <div className="mb-3 p-2 bg-red-50 text-red-700 text-sm rounded">
                   {submitError}
                 </div>
               )}
-              <form onSubmit={handleSubmitStatus}>
+              <form onSubmit={handleSubmitStatus} className="flex-1 overflow-y-auto overflow-x-hidden mt-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs text-black mb-1">New Status</label>
                     <select
                       value={newStatus}
                       onChange={(e) => setNewStatus(e.target.value)}
-                      className="w-full border border-gray-200 rounded-md px-2 py-2 text-sm"
+                      className="w-full text-sm text-gray-600 h-9 rounded-md border border-gray-200 px-2 py-2"
                       disabled={isSubmitting}
                     >
                       <option value="">Select next status...</option>
@@ -648,11 +669,14 @@ export default function DashboardPage() {
   const [departmentFilter, setDepartmentFilter] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [detailsOrder, setDetailsOrder] = useState(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [form, setForm] = useState({ customer: '', products: '', custom: '', units: '', material: '', dept: '' });
+  const [form, setForm] = useState({ customer: '', products: '', custom: '', units: '', material: '', dept: '', materialDetails: { material: '', gas: '', thickness: '', type: '' }, processDetails: { laserCutting: false, bending: false, fabrication: false, powderCoating: false } });
   const [formError, setFormError] = useState(''); // Add state for form error message
   const [departmentCounts, setDepartmentCounts] = useState([]);
 
@@ -931,8 +955,20 @@ export default function DashboardPage() {
         productDetails: form.products,
         customProductDetails: form.custom || '',
         units: form.units || '',
-        material: form.material || '',
-        department: form.dept // Values are already in uppercase format
+        material: form.materialDetails?.material || form.material || '',
+        department: form.dept, // Values are already in uppercase format
+        materialDetails: {
+          material: form.materialDetails?.material || '',
+          gas: form.materialDetails?.gas || '',
+          thickness: form.materialDetails?.thickness || '',
+          type: form.materialDetails?.type || '',
+        },
+        processDetails: {
+          laserCutting: Boolean(form.processDetails?.laserCutting),
+          bending: Boolean(form.processDetails?.bending),
+          fabrication: Boolean(form.processDetails?.fabrication),
+          powderCoating: Boolean(form.processDetails?.powderCoating),
+        }
       };
 
       // Call the API to create the order
@@ -949,7 +985,7 @@ export default function DashboardPage() {
       await fetchOrders();
 
       setShowCreateModal(false);
-      setForm({ customer: '', products: '', custom: '', units: '', material: '', dept: '' });
+      setForm({ customer: '', products: '', custom: '', units: '', material: '', dept: '', materialDetails: { material: '', gas: '', thickness: '', type: '' }, processDetails: { laserCutting: false, bending: false, fabrication: false, powderCoating: false } });
       setFormError(''); // Clear error on success
     } catch (error) {
       console.error('Error creating order:', error);
@@ -957,6 +993,39 @@ export default function DashboardPage() {
       const errorMessage = error.message || 'Error creating order';
       setFormError(errorMessage);
       toast.error(errorMessage, { duration: 10000 }); // Show for 10 seconds
+    }
+  };
+
+  const handleOpenOrderDetails = async (row) => {
+    try {
+      const rawId = row?.id ? String(row.id).replace('SF', '') : '';
+      if (!rawId) {
+        toast.error('Invalid order id');
+        return;
+      }
+
+      const order = await orderApi.getOrderById(rawId);
+      setDetailsOrder(order);
+      setShowDetailsModal(true);
+    } catch (err) {
+      console.error('Error fetching order details from dashboard:', err);
+      toast.error('Failed to fetch order details');
+    }
+  };
+
+  const handleOpenOrderSlider = async (row) => {
+    try {
+      const rawId = row?.id ? String(row.id).replace('SF', '') : '';
+      if (!rawId) {
+        toast.error('Invalid order id');
+        return;
+      }
+
+      const order = await orderApi.getOrderById(rawId);
+      setSelectedOrder(order);
+    } catch (err) {
+      console.error('Error fetching order details for slider from dashboard:', err);
+      toast.error('Failed to fetch order details');
     }
   };
 
@@ -1063,40 +1132,31 @@ export default function DashboardPage() {
             </select>
           </div>
 
-          <OrdersTable rows={rows} statusFilter={statusFilter} departmentFilter={departmentFilter} searchTerm={searchTerm} onView={setSelectedOrder} loading={loading} error={error} />
+          <OrdersTable
+            rows={rows}
+            statusFilter={statusFilter}
+            departmentFilter={departmentFilter}
+            searchTerm={searchTerm}
+            onView={handleOpenOrderDetails}
+            onViewDetails={handleOpenOrderSlider}
+            loading={loading}
+            error={error}
+          />
         </div>
         {/* Details Panel */}
-        {selectedOrder && (
-          <DetailsPanel 
-            order={selectedOrder} 
-            onClose={() => setSelectedOrder(null)}
-            onUpdateOrder={(orderId, newStatus, progressPatch) => {
-              setSelectedOrder((prev) => {
-                const next = { ...prev };
-                if (newStatus) next.department = newStatus;
-                if (progressPatch) {
-                  next.designProgress = progressPatch.designProgress;
-                  next.productionProgress = progressPatch.productionProgress;
-                  next.machiningProgress = progressPatch.machiningProgress;
-                  next.inspectionProgress = progressPatch.inspectionProgress;
-                }
-                return next;
-              });
-
-              setRows((prevRows) =>
-                prevRows.map((row) => {
-                  if (row.id !== `SF${orderId}`) return row;
-                  return {
-                    ...row,
-                    ...(newStatus ? { department: newStatus } : {}),
-                    ...(progressPatch ? progressPatch : {}),
-                  };
-                })
-              );
-            }}
+        {showDetailsModal && detailsOrder && (
+          <OrderDetailsModal
+            order={detailsOrder}
+            onClose={() => setShowDetailsModal(false)}
           />
         )}
 
+        {selectedOrder && (
+          <DetailsPanel
+            order={selectedOrder}
+            onClose={() => setSelectedOrder(null)}
+          />
+        )}
         {/* Create Order Modal */}
         {showCreateModal && (
           <div className="fixed inset-0 z-50">
@@ -1105,7 +1165,7 @@ export default function DashboardPage() {
               onClick={() => setShowCreateModal(false)}
             />
             <div className="absolute inset-0 flex items-center justify-center p-4">
-              <div className="w-full max-w-lg bg-white rounded-lg shadow-xl border border-gray-200">
+              <div className="w-full max-w-[95vw] md:max-w-4xl lg:max-w-5xl bg-white rounded-lg shadow-xl border border-gray-200 max-h-[60vh] flex flex-col">
                 <div className="flex items-center justify-between p-4 border-b border-gray-200">
                   <h3 className="text-lg font-semibold text-black">Create New Order</h3>
                   <button
@@ -1115,7 +1175,8 @@ export default function DashboardPage() {
                     ×
                   </button>
                 </div>
-                <div className="p-4 space-y-4">
+                <div className="p-4 space-y-4 overflow-y-auto flex-1">
+
                   {formError && (
                     <div className="bg-red-50 border border-red-200 rounded-lg p-3">
                       <p className="text-red-700 text-sm">{formError}</p>
@@ -1234,24 +1295,111 @@ export default function DashboardPage() {
                         className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
                       />
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium mb-1 text-black">
-                        Material
+                    <div />
+                  </div>
+
+                  <div className="border rounded-lg p-4 bg-gray-50">
+                    <h4 className="text-sm font-semibold text-black mb-3">Material Details</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-xs font-medium mb-1 text-black">
+                          Material
+                        </label>
+                        <input
+                          value={form.materialDetails?.material || ''}
+                          onChange={(e)=>setForm(f=>({
+                            ...f,
+                            material: e.target.value,
+                            materialDetails: { ...(f.materialDetails || {}), material: e.target.value }
+                          }))}
+                          type="text"
+                          placeholder="e.g. Stainless Steel 316"
+                          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1 text-black">
+                          Gas
+                        </label>
+                        <input
+                          value={form.materialDetails?.gas || ''}
+                          onChange={(e)=>setForm(f=>({ ...f, materialDetails: { ...(f.materialDetails || {}), gas: e.target.value } }))}
+                          type="text"
+                          placeholder="e.g. Nitrogen"
+                          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1 text-black">
+                          Thickness
+                        </label>
+                        <input
+                          value={form.materialDetails?.thickness || ''}
+                          onChange={(e)=>setForm(f=>({ ...f, materialDetails: { ...(f.materialDetails || {}), thickness: e.target.value } }))}
+                          type="text"
+                          placeholder="e.g. 2mm"
+                          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1 text-black">
+                          Type
+                        </label>
+                        <input
+                          value={form.materialDetails?.type || ''}
+                          onChange={(e)=>setForm(f=>({ ...f, materialDetails: { ...(f.materialDetails || {}), type: e.target.value } }))}
+                          type="text"
+                          placeholder="e.g. Sheet"
+                          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border rounded-lg p-4 bg-gray-50">
+                    <h4 className="text-sm font-semibold text-black mb-3">Process Details</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm text-black">
+                      <label className="inline-flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(form.processDetails?.laserCutting)}
+                          onChange={(e)=>setForm(f=>({ ...f, processDetails: { ...(f.processDetails || {}), laserCutting: e.target.checked } }))}
+                          className="h-4 w-4"
+                        />
+                        <span>Laser Cutting</span>
                       </label>
-                      <input
-                        value={form.material}
-                        onChange={(e) =>
-                          setForm((f) => ({ ...f, material: e.target.value }))
-                        }
-                        type="text"
-                        placeholder="e.g. Stainless Steel 316"
-                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
-                      />
+                      <label className="inline-flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(form.processDetails?.bending)}
+                          onChange={(e)=>setForm(f=>({ ...f, processDetails: { ...(f.processDetails || {}), bending: e.target.checked } }))}
+                          className="h-4 w-4"
+                        />
+                        <span>Bending</span>
+                      </label>
+                      <label className="inline-flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(form.processDetails?.fabrication)}
+                          onChange={(e)=>setForm(f=>({ ...f, processDetails: { ...(f.processDetails || {}), fabrication: e.target.checked } }))}
+                          className="h-4 w-4"
+                        />
+                        <span>Fabrication</span>
+                      </label>
+                      <label className="inline-flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(form.processDetails?.powderCoating)}
+                          onChange={(e)=>setForm(f=>({ ...f, processDetails: { ...(f.processDetails || {}), powderCoating: e.target.checked } }))}
+                          className="h-4 w-4"
+                        />
+                        <span>Powder Coating</span>
+                      </label>
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium mb-1 text-black">
+                    <label className="block text-xs font-medium text-black mb-1">
                       Assign to Department
                     </label>
                     <select
@@ -1710,7 +1858,8 @@ function polarToCartesian(cx, cy, r, angleDeg) {
   };
 }
 
-function OrdersTable({ rows = [], statusFilter = 'All', departmentFilter = 'All', searchTerm = '', onView, loading, error }) {
+function OrdersTable({ rows = [], statusFilter = 'All', departmentFilter = 'All', searchTerm = '', onView, onViewDetails, loading, error }) {
+
   // Apply all filters: status, department, and search
   let visible = rows;
   
@@ -1780,7 +1929,13 @@ function OrdersTable({ rows = [], statusFilter = 'All', departmentFilter = 'All'
           {visible.map((r, i) => (
             <tr key={r.id} className={i % 2 ? 'bg-gray-50' : ''}>
               <td className="py-2 px-3 font-medium text-indigo-600">
-                <Link href={`/orders/${r.id.replace('SF', '')}`} className="underline">{r.id}</Link>
+                <button
+                  type="button"
+                  onClick={() => onView?.(r)}
+                  className="underline hover:text-indigo-800"
+                >
+                  {r.id}
+                </button>
               </td>
               <td className="py-2 px-3 text-black">{r.customer}</td>
               <td className="py-2 px-3 text-black">{r.products}</td>
@@ -1804,7 +1959,7 @@ function OrdersTable({ rows = [], statusFilter = 'All', departmentFilter = 'All'
               </td>
               <td className="py-2 px-3">
                 <button 
-                  onClick={() => onView?.(r)} 
+                  onClick={() => onViewDetails?.(r)}
                   className="text-blue-600 hover:text-blue-800 hover:underline"
                 >
                   View Details

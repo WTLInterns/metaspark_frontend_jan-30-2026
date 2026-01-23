@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 import { getVisibleReportDefsForCurrentUser } from '@/utils/reportVisibility';
 import { downloadReport as downloadReportUtil } from '@/utils/downloadReport';
 import StatusHistoryTimeline from '@/components/StatusHistoryTimeline';
+import OrderDetailsModal from '@/components/OrderDetailsModal';
 
 function DetailsPanel({ order, onClose, onUpdateOrder }) {
   // Add state for the status update form
@@ -35,6 +36,11 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
 
   const currentRole = getCurrentUserRole();
 
+  const resolvedOrderId = order?.orderId ?? order?.id ?? order?._id ?? '';
+  const numericOrderId = resolvedOrderId
+    ? String(resolvedOrderId).replace('SF', '')
+    : '';
+
   const [stageProgress, setStageProgress] = useState({
     designProgress: Number(order?.designProgress ?? 0),
     productionProgress: Number(order?.productionProgress ?? 0),
@@ -58,7 +64,11 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
 
   const downloadReport = (type) => {
     if (typeof downloadReportUtil !== 'function') return;
-    return downloadReportUtil({ orderDisplayId: order.id, type });
+    if (!resolvedOrderId) {
+      console.error('Cannot download report, missing order id');
+      return;
+    }
+    return downloadReportUtil({ orderDisplayId: resolvedOrderId, type });
   };
 
   const getStatusBadgeClasses = (status) => {
@@ -128,8 +138,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
     const fetchStatusHistory = async () => {
       try {
         setLoadingHistory(true);
-        const orderId = order?.id ? order.id.replace('SF', '') : '';
-        if (!orderId) {
+        if (!numericOrderId) {
           setStatusHistory([]);
           return;
         }
@@ -138,7 +147,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
         const authData = JSON.parse(localStorage.getItem('swiftflow-user'));
         const token = authData?.token;
 
-        const response = await fetch(`http://localhost:8080/status/order/${orderId}`, {
+        const response = await fetch(`http://localhost:8080/status/order/${numericOrderId}`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -160,7 +169,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
     };
 
     fetchStatusHistory();
-  }, [order?.id]);
+  }, [numericOrderId]);
 
   // Handle form submission
   const handleSubmitStatus = async (e) => {
@@ -194,15 +203,17 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
         formData.append('attachment', attachment);
       }
 
-      // Extract order ID from order.id (remove 'SF' prefix)
-      const orderId = order.id.replace('SF', '');
+      if (!numericOrderId) {
+        setSubmitError('Invalid order id for status update');
+        return;
+      }
 
       // Get token from localStorage
       const authData = JSON.parse(localStorage.getItem('swiftflow-user'));
       const token = authData?.token;
 
       // Make API call with authorization header
-      const response = await fetch(`http://localhost:8080/status/create/${orderId}`, {
+      const response = await fetch(`http://localhost:8080/status/create/${numericOrderId}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -222,7 +233,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
 
       // Immediately refresh status history so the UI shows the latest entry
       try {
-        const historyResponse = await fetch(`http://localhost:8080/status/order/${orderId}`, {
+        const historyResponse = await fetch(`http://localhost:8080/status/order/${numericOrderId}`, {
           headers: {
             'Authorization': `Bearer ${token}`,
           },
@@ -238,7 +249,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
 
       // Notify parent to refresh order data
       if (onUpdateOrder) {
-        onUpdateOrder(order.id.replace('SF', ''), newStatus);
+        onUpdateOrder(numericOrderId, newStatus);
       }
     } catch (error) {
       console.error('Error updating status:', error);
@@ -253,7 +264,11 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
     setIsSavingStageProgress(true);
 
     try {
-      const orderId = order.id.replace('SF', '');
+      if (!numericOrderId) {
+        setStageProgressError('Invalid order id for stage progress update');
+        return;
+      }
+
       const authData = JSON.parse(localStorage.getItem('swiftflow-user'));
       const token = authData?.token;
 
@@ -269,7 +284,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
         throw new Error('Invalid stage');
       }
 
-      const response = await fetch(`http://localhost:8080/order/${orderId}/stage-progress`, {
+      const response = await fetch(`http://localhost:8080/order/${numericOrderId}/stage-progress`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -487,7 +502,16 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
               </div>
               <div className="mb-4">
                 <div className="text-xs text-black mb-1">Products</div>
-                <div className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-black">{order.products}</div>
+                <div className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-black">
+                  {Array.isArray(order.products)
+                    ? order.products
+                        .map((p) => p && (p.productName || p.productCode))
+                        .filter(Boolean)
+                        .join(', ')
+                    : order.products && typeof order.products === 'object'
+                      ? (order.products.productName || order.products.productCode || 'No Product')
+                      : (order.products || 'No Product')}
+                </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -703,7 +727,10 @@ export default function DashboardPage() {
   const [departmentFilter, setDepartmentFilter] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [detailsOrder, setDetailsOrder] = useState(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -913,6 +940,39 @@ export default function DashboardPage() {
     }
   };
 
+  const handleOpenOrderDetails = async (row) => {
+    try {
+      const rawId = row?.id ? String(row.id).replace('SF', '') : '';
+      if (!rawId) {
+        toast.error('Invalid order id');
+        return;
+      }
+
+      const order = await orderApi.getOrderById(rawId);
+      setDetailsOrder(order);
+      setShowDetailsModal(true);
+    } catch (err) {
+      console.error('Error fetching order details from design dashboard:', err);
+      toast.error('Failed to fetch order details');
+    }
+  };
+
+  const handleOpenOrderSlider = async (row) => {
+    try {
+      const rawId = row?.id ? String(row.id).replace('SF', '') : '';
+      if (!rawId) {
+        toast.error('Invalid order id');
+        return;
+      }
+
+      const order = await orderApi.getOrderById(rawId);
+      setSelectedOrder(order);
+    } catch (err) {
+      console.error('Error fetching order details for slider from design dashboard:', err);
+      toast.error('Failed to fetch order details');
+    }
+  };
+
   return (
     <div className="w-full">
       {/* Main content */}
@@ -1016,37 +1076,29 @@ export default function DashboardPage() {
             </select>
           </div>
 
-          <OrdersTable rows={rows} statusFilter={statusFilter} departmentFilter={departmentFilter} searchTerm={searchTerm} onView={setSelectedOrder} loading={loading} error={error} />
+          <OrdersTable
+            rows={rows}
+            statusFilter={statusFilter}
+            departmentFilter={departmentFilter}
+            searchTerm={searchTerm}
+            onView={handleOpenOrderDetails}
+            onViewDetails={handleOpenOrderSlider}
+            loading={loading}
+            error={error}
+          />
         </div>
         {/* Details Panel */}
-        {selectedOrder && (
-          <DetailsPanel 
-            order={selectedOrder} 
-            onClose={() => setSelectedOrder(null)}
-            onUpdateOrder={(orderId, newStatus, progressPatch) => {
-              setSelectedOrder((prev) => {
-                const next = { ...prev };
-                if (newStatus) next.department = newStatus;
-                if (progressPatch) {
-                  next.designProgress = progressPatch.designProgress;
-                  next.productionProgress = progressPatch.productionProgress;
-                  next.machiningProgress = progressPatch.machiningProgress;
-                  next.inspectionProgress = progressPatch.inspectionProgress;
-                }
-                return next;
-              });
+        {showDetailsModal && detailsOrder && (
+          <OrderDetailsModal
+            order={detailsOrder}
+            onClose={() => setShowDetailsModal(false)}
+          />
+        )}
 
-              setRows((prevRows) =>
-                prevRows.map((row) => {
-                  if (row.id !== `SF${orderId}`) return row;
-                  return {
-                    ...row,
-                    ...(newStatus ? { department: newStatus } : {}),
-                    ...(progressPatch ? progressPatch : {}),
-                  };
-                })
-              );
-            }}
+        {selectedOrder && (
+          <DetailsPanel
+            order={selectedOrder}
+            onClose={() => setSelectedOrder(null)}
           />
         )}
 
@@ -1344,7 +1396,8 @@ function polarToCartesian(cx, cy, r, angleDeg) {
   };
 }
 
-function OrdersTable({ rows = [], statusFilter = 'All', departmentFilter = 'All', searchTerm = '', onView, loading, error }) {
+function OrdersTable({ rows = [], statusFilter = 'All', departmentFilter = 'All', searchTerm = '', onView, onViewDetails, loading, error }) {
+
   // Apply all filters: status, department, and search
   let visible = rows;
   
@@ -1414,21 +1467,27 @@ function OrdersTable({ rows = [], statusFilter = 'All', departmentFilter = 'All'
           {visible.map((r, i) => (
             <tr key={r.id} className={i % 2 ? 'bg-gray-50' : ''}>
               <td className="py-2 px-3 font-medium text-indigo-600">
-                <Link href={`/orders/${r.id.replace('SF', '')}`} className="underline">{r.id}</Link>
+                <button
+                  type="button"
+                  onClick={() => onView?.(r)}
+                  className="underline hover:text-indigo-800"
+                >
+                  {r.id}
+                </button>
               </td>
               <td className="py-2 px-3 text-black">{r.customer}</td>
               <td className="py-2 px-3 text-black">{r.products}</td>
               <td className="py-2 px-3 text-black">{r.date}</td>
               <td className="py-2 px-3">
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs border whitespace-nowrap ${
-                  r.department === 'DESIGN' 
-                    ? 'bg-orange-50 text-orange-700 border-orange-200' 
-                    : r.department === 'MACHINING' 
-                      ? 'bg-blue-50 text-blue-700 border-blue-200' 
-                      : r.department === 'INSPECTION' 
-                        ? 'bg-yellow-50 text-yellow-700 border-yellow-200' 
-                        : r.department === 'PRODUCTION' 
-                          ? 'bg-green-50 text-green-700 border-green-200' 
+                  r.department === 'DESIGN'
+                    ? 'bg-orange-50 text-orange-700 border-orange-200'
+                    : r.department === 'MACHINING'
+                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                      : r.department === 'INSPECTION'
+                        ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                        : r.department === 'PRODUCTION'
+                          ? 'bg-green-50 text-green-700 border-green-200'
                           : r.department === 'ENQUIRY' 
                             ? 'bg-purple-50 text-purple-700 border-purple-200' 
                             : 'bg-gray-50 text-gray-700 border-gray-200'
@@ -1438,7 +1497,7 @@ function OrdersTable({ rows = [], statusFilter = 'All', departmentFilter = 'All'
               </td>
               <td className="py-2 px-3">
                 <button 
-                  onClick={() => onView?.(r)} 
+                  onClick={() => onViewDetails?.(r)}
                   className="text-blue-600 hover:text-blue-800 hover:underline"
                 >
                   View Details

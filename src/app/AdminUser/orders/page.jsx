@@ -8,6 +8,7 @@ import { useCustomerProductData } from '../dashboard/useCustomerProductData';
 import * as customerApi from '../customers/api';
 import { createProduct as createProductApi } from '../products/productService';
 import toast from 'react-hot-toast';
+import OrderDetailsModal from '@/components/OrderDetailsModal';
 
 export default function AllOrdersPage() {
   const [rows, setRows] = useState([]);
@@ -17,7 +18,7 @@ export default function AllOrdersPage() {
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [form, setForm] = useState({ customer: '', products: '', custom: '', units: '', material: '', dept: '', billingAddress: '', shippingAddress: '', addressType: '' });
+  const [form, setForm] = useState({ customer: '', products: '', custom: '', units: '', material: '', dept: '', billingAddress: '', shippingAddress: '', addressType: '', materialDetails: { material: '', gas: '', thickness: '', type: '' }, processDetails: { laserCutting: false, bending: false, fabrication: false, powderCoating: false } });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [formError, setFormError] = useState('');
@@ -241,8 +242,20 @@ export default function AllOrdersPage() {
         productDetails: form.products,
         customProductDetails: form.custom || '',
         units: form.units || '',
-        material: form.material || '',
+        material: form.materialDetails?.material || form.material || '',
         department: form.dept,
+        materialDetails: {
+          material: form.materialDetails?.material || '',
+          gas: form.materialDetails?.gas || '',
+          thickness: form.materialDetails?.thickness || '',
+          type: form.materialDetails?.type || '',
+        },
+        processDetails: {
+          laserCutting: Boolean(form.processDetails?.laserCutting),
+          bending: Boolean(form.processDetails?.bending),
+          fabrication: Boolean(form.processDetails?.fabrication),
+          powderCoating: Boolean(form.processDetails?.powderCoating),
+        },
       };
 
       await orderApi.createOrder(
@@ -254,7 +267,7 @@ export default function AllOrdersPage() {
       toast.success('Order created successfully');
       await fetchOrders();
       setShowModal(false);
-      setForm({ customer: '', products: '', custom: '', units: '', material: '', dept: '', billingAddress: '', shippingAddress: '', addressType: '' });
+      setForm({ customer: '', products: '', custom: '', units: '', material: '', dept: '', billingAddress: '', shippingAddress: '', addressType: '', materialDetails: { material: '', gas: '', thickness: '', type: '' }, processDetails: { laserCutting: false, bending: false, fabrication: false, powderCoating: false } });
       setFormError('');
     } catch (e) {
       console.error('Error creating order from AllOrdersPage:', e);
@@ -307,7 +320,19 @@ export default function AllOrdersPage() {
           dept: orderData.department || '',
           billingAddress: orderData.customers?.[0]?.billingAddress || '',
           shippingAddress: orderData.customers?.[0]?.shippingAddress || '',
-          addressType: ''
+          addressType: '',
+          materialDetails: {
+            material: orderData.materialDetails?.material || orderData.material || '',
+            gas: orderData.materialDetails?.gas || '',
+            thickness: orderData.materialDetails?.thickness || '',
+            type: orderData.materialDetails?.type || '',
+          },
+          processDetails: {
+            laserCutting: Boolean(orderData.processDetails?.laserCutting),
+            bending: Boolean(orderData.processDetails?.bending),
+            fabrication: Boolean(orderData.processDetails?.fabrication),
+            powderCoating: Boolean(orderData.processDetails?.powderCoating),
+          },
         });
         setShowEditModal(true);
       } else {
@@ -334,10 +359,22 @@ export default function AllOrdersPage() {
       const orderData = {
         customProductDetails: form.custom || '',
         units: form.units || '',
-        material: form.material || '',
+        material: form.materialDetails?.material || form.material || '',
         department: form.dept,
         customerId: parseInt(form.customer) || null,
         productId: parseInt(form.products) || null,
+        materialDetails: {
+          material: form.materialDetails?.material || '',
+          gas: form.materialDetails?.gas || '',
+          thickness: form.materialDetails?.thickness || '',
+          type: form.materialDetails?.type || '',
+        },
+        processDetails: {
+          laserCutting: Boolean(form.processDetails?.laserCutting),
+          bending: Boolean(form.processDetails?.bending),
+          fabrication: Boolean(form.processDetails?.fabrication),
+          powderCoating: Boolean(form.processDetails?.powderCoating),
+        },
       };
 
       const response = await fetch(`http://localhost:8080/order/update/${orderId}`, {
@@ -354,7 +391,7 @@ export default function AllOrdersPage() {
         await fetchOrders();
         setShowEditModal(false);
         setSelectedOrder(null);
-        setForm({ customer: '', products: '', custom: '', units: '', material: '', dept: '', billingAddress: '', shippingAddress: '', addressType: '' });
+        setForm({ customer: '', products: '', custom: '', units: '', material: '', dept: '', billingAddress: '', shippingAddress: '', addressType: '', materialDetails: { material: '', gas: '', thickness: '', type: '' }, processDetails: { laserCutting: false, bending: false, fabrication: false, powderCoating: false } });
         setFormError('');
       } else {
         const errorData = await response.json();
@@ -420,7 +457,7 @@ export default function AllOrdersPage() {
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={()=>setShowModal(false)} />
           <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="w-full max-w-lg bg-white rounded-lg shadow-xl border border-gray-200 max-h-[60vh] flex flex-col">
+            <div className="w-full max-w-[95vw] md:max-w-4xl lg:max-w-5xl bg-white rounded-lg shadow-xl border border-gray-200 max-h-[60vh] flex flex-col">
               <div className="flex items-center justify-between p-4 border-b border-gray-200 flex-shrink-0">
                 <h3 className="text-lg font-semibold text-black">Create New Order</h3>
                 <button onClick={()=>setShowModal(false)} className="text-black">×</button>
@@ -512,9 +549,98 @@ export default function AllOrdersPage() {
                     <label className="block text-xs font-medium mb-1 text-black">Units</label>
                     <input value={form.units} onChange={(e)=>setForm(f=>({...f, units:e.target.value}))} type="number" placeholder="e.g. 500" className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black" />
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium mb-1 text-black">Material</label>
-                    <input value={form.material} onChange={(e)=>setForm(f=>({...f, material:e.target.value}))} type="text" placeholder="e.g. Stainless Steel 316" className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black" />
+                  <div />
+                </div>
+
+                <div className="border rounded-lg p-4 bg-gray-50">
+                  <h4 className="text-sm font-semibold text-black mb-3">Material Details</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-xs font-medium mb-1 text-black">Material</label>
+                      <input
+                        value={form.materialDetails?.material || ''}
+                        onChange={(e)=>setForm(f=>({
+                          ...f,
+                          material: e.target.value,
+                          materialDetails: { ...(f.materialDetails || {}), material: e.target.value }
+                        }))}
+                        type="text"
+                        placeholder="e.g. Stainless Steel 316"
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1 text-black">Gas</label>
+                      <input
+                        value={form.materialDetails?.gas || ''}
+                        onChange={(e)=>setForm(f=>({ ...f, materialDetails: { ...(f.materialDetails || {}), gas: e.target.value } }))}
+                        type="text"
+                        placeholder="e.g. Nitrogen"
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1 text-black">Thickness</label>
+                      <input
+                        value={form.materialDetails?.thickness || ''}
+                        onChange={(e)=>setForm(f=>({ ...f, materialDetails: { ...(f.materialDetails || {}), thickness: e.target.value } }))}
+                        type="text"
+                        placeholder="e.g. 2mm"
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1 text-black">Type</label>
+                      <input
+                        value={form.materialDetails?.type || ''}
+                        onChange={(e)=>setForm(f=>({ ...f, materialDetails: { ...(f.materialDetails || {}), type: e.target.value } }))}
+                        type="text"
+                        placeholder="e.g. Sheet"
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border rounded-lg p-4 bg-gray-50">
+                  <h4 className="text-sm font-semibold text-black mb-3">Process Details</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm text-black">
+                    <label className="inline-flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.processDetails?.laserCutting)}
+                        onChange={(e)=>setForm(f=>({ ...f, processDetails: { ...(f.processDetails || {}), laserCutting: e.target.checked } }))}
+                        className="h-4 w-4"
+                      />
+                      <span>Laser Cutting</span>
+                    </label>
+                    <label className="inline-flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.processDetails?.bending)}
+                        onChange={(e)=>setForm(f=>({ ...f, processDetails: { ...(f.processDetails || {}), bending: e.target.checked } }))}
+                        className="h-4 w-4"
+                      />
+                      <span>Bending</span>
+                    </label>
+                    <label className="inline-flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.processDetails?.fabrication)}
+                        onChange={(e)=>setForm(f=>({ ...f, processDetails: { ...(f.processDetails || {}), fabrication: e.target.checked } }))}
+                        className="h-4 w-4"
+                      />
+                      <span>Fabrication</span>
+                    </label>
+                    <label className="inline-flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.processDetails?.powderCoating)}
+                        onChange={(e)=>setForm(f=>({ ...f, processDetails: { ...(f.processDetails || {}), powderCoating: e.target.checked } }))}
+                        className="h-4 w-4"
+                      />
+                      <span>Powder Coating</span>
+                    </label>
                   </div>
                 </div>
                 <div>
@@ -775,100 +901,10 @@ export default function AllOrdersPage() {
       )}
       {/* View Order Modal */}
       {showViewModal && selectedOrder && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowViewModal(false)} />
-          <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="w-full max-w-2xl bg-white rounded-lg shadow-xl border border-gray-200 max-h-[60vh] flex flex-col">
-              <div className="flex items-center justify-between p-4 border-b border-gray-200 flex-shrink-0">
-                <h3 className="text-lg font-semibold text-black">Order Details - {selectedOrder.orderId}</h3>
-                <button onClick={() => setShowViewModal(false)} className="text-black">×</button>
-              </div>
-              <div className="p-6 space-y-4 overflow-y-auto flex-1">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <h4 className="font-medium text-gray-900 mb-2">Customer Information</h4>
-                    <dl className="space-y-2">
-                      <div>
-                        <dt className="text-sm text-gray-500">Customer Name:</dt>
-                        <dd className="text-sm text-gray-900">{selectedOrder.customers?.[0]?.customerName || 'N/A'}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-sm text-gray-500">Company Name:</dt>
-                        <dd className="text-sm text-gray-900">{selectedOrder.customers?.[0]?.companyName || 'N/A'}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-sm text-gray-500">Email:</dt>
-                        <dd className="text-sm text-gray-900">{selectedOrder.customers?.[0]?.customerEmail || 'N/A'}</dd>
-                      </div>
-                    </dl>
-                  </div>
-                  <div>
-                    <h4 className="font-medium text-gray-900 mb-2">Order Information</h4>
-                    <dl className="space-y-2">
-                      <div>
-                        <dt className="text-sm text-gray-500">Order ID:</dt>
-                        <dd className="text-sm text-gray-900">SF{selectedOrder.orderId}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-sm text-gray-500">Date Added:</dt>
-                        <dd className="text-sm text-gray-900">{selectedOrder.dateAdded}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-sm text-gray-500">Status:</dt>
-                        <dd className="text-sm text-gray-900">{selectedOrder.status}</dd>
-                      </div>
-                    </dl>
-                  </div>
-                </div>
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-2">Product Details</h4>
-                  <dl className="space-y-2">
-                    <div>
-                      <dt className="text-sm text-gray-500">Product(s):</dt>
-                      <dd className="text-sm text-gray-900">
-                        {selectedOrder.products?.map(p => `${p.productCode} - ${p.productName}`).join(', ') || 'N/A'}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm text-gray-500">Custom Product Details:</dt>
-                      <dd className="text-sm text-gray-900">{selectedOrder.customProductDetails || 'N/A'}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm text-gray-500">Units:</dt>
-                      <dd className="text-sm text-gray-900">{selectedOrder.units || 'N/A'}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-sm text-gray-500">Material:</dt>
-                      <dd className="text-sm text-gray-900">{selectedOrder.material || 'N/A'}</dd>
-                    </div>
-                  </dl>
-                </div>
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-2">Address Information</h4>
-                  <div className="space-y-3">
-                    <div className="bg-gray-50 p-3 rounded">
-                      <div className="text-xs font-medium text-gray-500 mb-1">PRIMARY ADDRESS</div>
-                      <p className="text-sm text-gray-900">{selectedOrder.customers?.[0]?.primaryAddress || 'N/A'}</p>
-                    </div>
-                    <div className="bg-blue-50 p-3 rounded">
-                      <div className="text-xs font-medium text-blue-700 mb-1">BILLING ADDRESS</div>
-                      <p className="text-sm text-blue-900">{selectedOrder.customers?.[0]?.billingAddress || 'N/A'}</p>
-                    </div>
-                    <div className="bg-green-50 p-3 rounded">
-                      <div className="text-xs font-medium text-green-700 mb-1">SHIPPING ADDRESS</div>
-                      <p className="text-sm text-green-900">{selectedOrder.customers?.[0]?.shippingAddress || 'N/A'}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-200 flex-shrink-0">
-                <button onClick={() => setShowViewModal(false)} className="px-4 py-2 rounded-md border border-gray-300 text-black">
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <OrderDetailsModal
+          order={selectedOrder}
+          onClose={() => setShowViewModal(false)}
+        />
       )}
       {/* Edit Order Modal */}
       {showEditModal && selectedOrder && (
@@ -947,15 +983,98 @@ export default function AllOrdersPage() {
                       className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium mb-1 text-black">Material</label>
-                    <input
-                      value={form.material}
-                      onChange={(e) => setForm((f) => ({ ...f, material: e.target.value }))}
-                      type="text"
-                      placeholder="e.g. Stainless Steel 316"
-                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
-                    />
+                  <div />
+                </div>
+
+                <div className="border border-gray-200 rounded-lg p-3">
+                  <h4 className="text-sm font-semibold text-black mb-3">Material Details</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium mb-1 text-black">Material</label>
+                      <input
+                        value={form.materialDetails?.material || ''}
+                        onChange={(e)=>setForm(f=>({
+                          ...f,
+                          material: e.target.value,
+                          materialDetails: { ...(f.materialDetails || {}), material: e.target.value }
+                        }))}
+                        type="text"
+                        placeholder="e.g. Stainless Steel 316"
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1 text-black">Gas</label>
+                      <input
+                        value={form.materialDetails?.gas || ''}
+                        onChange={(e)=>setForm(f=>({ ...f, materialDetails: { ...(f.materialDetails || {}), gas: e.target.value } }))}
+                        type="text"
+                        placeholder="e.g. Nitrogen"
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1 text-black">Thickness</label>
+                      <input
+                        value={form.materialDetails?.thickness || ''}
+                        onChange={(e)=>setForm(f=>({ ...f, materialDetails: { ...(f.materialDetails || {}), thickness: e.target.value } }))}
+                        type="text"
+                        placeholder="e.g. 2mm"
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1 text-black">Type</label>
+                      <input
+                        value={form.materialDetails?.type || ''}
+                        onChange={(e)=>setForm(f=>({ ...f, materialDetails: { ...(f.materialDetails || {}), type: e.target.value } }))}
+                        type="text"
+                        placeholder="e.g. Sheet"
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-black"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border border-gray-200 rounded-lg p-3">
+                  <h4 className="text-sm font-semibold text-black mb-3">Process Details</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-black">
+                    <label className="inline-flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.processDetails?.laserCutting)}
+                        onChange={(e)=>setForm(f=>({ ...f, processDetails: { ...(f.processDetails || {}), laserCutting: e.target.checked } }))}
+                        className="h-4 w-4"
+                      />
+                      <span>Laser Cutting</span>
+                    </label>
+                    <label className="inline-flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.processDetails?.bending)}
+                        onChange={(e)=>setForm(f=>({ ...f, processDetails: { ...(f.processDetails || {}), bending: e.target.checked } }))}
+                        className="h-4 w-4"
+                      />
+                      <span>Bending</span>
+                    </label>
+                    <label className="inline-flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.processDetails?.fabrication)}
+                        onChange={(e)=>setForm(f=>({ ...f, processDetails: { ...(f.processDetails || {}), fabrication: e.target.checked } }))}
+                        className="h-4 w-4"
+                      />
+                      <span>Fabrication</span>
+                    </label>
+                    <label className="inline-flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.processDetails?.powderCoating)}
+                        onChange={(e)=>setForm(f=>({ ...f, processDetails: { ...(f.processDetails || {}), powderCoating: e.target.checked } }))}
+                        className="h-4 w-4"
+                      />
+                      <span>Powder Coating</span>
+                    </label>
                   </div>
                 </div>
                 <div>
@@ -1010,7 +1129,13 @@ function OrdersTable({ rows = [], onView, onEdit, onDelete }) {
           {rows.map((r, i) => (
             <tr key={r.id} className={i % 2 ? 'bg-gray-50' : ''}>
               <td className="py-2 px-3 font-medium text-indigo-600">
-                <Link href={`/orders/${r.id}`} className="underline">{r.id}</Link>
+                <button
+                  type="button"
+                  onClick={() => onView(r)}
+                  className="underline hover:text-indigo-800"
+                >
+                  {r.id}
+                </button>
               </td>
               <td className="py-2 px-3 text-black">{r.customer}</td>
               <td className="py-2 px-3 text-black">{r.products}</td>
@@ -1061,4 +1186,4 @@ function OrdersTable({ rows = [], onView, onEdit, onDelete }) {
   );
 }
 
- 
+

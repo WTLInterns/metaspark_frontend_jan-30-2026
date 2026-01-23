@@ -30,6 +30,9 @@ export default function ProductionLinePage() {
   const [orders, setOrders] = useState([]);
   const [pdfMap, setPdfMap] = useState({});
   const [pdfModalUrl, setPdfModalUrl] = useState(null);
+  const [pdfType, setPdfType] = useState('standard');
+  const [isRowsLoading, setIsRowsLoading] = useState(false);
+  const [isAnalyzingPdf, setIsAnalyzingPdf] = useState(false);
   const [pdfRows, setPdfRows] = useState([]);
   const [partsRows, setPartsRows] = useState([]);
   const [materialRows, setMaterialRows] = useState([]);
@@ -64,6 +67,296 @@ export default function ProductionLinePage() {
     status: 'Active',
   });
   const [userRole, setUserRole] = useState('PRODUCTION');
+
+  // ===========================
+  // ✅ NESTING (PDF-2) UI STATES (additive)
+  // ===========================
+  const [resultBlocks, setResultBlocks] = useState([]);
+  const [plateInfoRows, setPlateInfoRows] = useState([]);
+  const [partInfoRows, setPartInfoRows] = useState([]);
+  const [activeResultNo, setActiveResultNo] = useState(null);
+
+  const [designerSelectedRowIds, setDesignerSelectedRowIds] = useState([]);
+  const [productionSelectedRowIds, setProductionSelectedRowIds] = useState([]);
+  const [machineSelectedRowIds, setMachineSelectedRowIds] = useState([]);
+  const [inspectionSelectedRowIds, setInspectionSelectedRowIds] = useState([]);
+
+  // ===========================
+  // ✅ NESTING HELPERS (copied 1:1 from Design where applicable)
+  // ===========================
+  const getToken = () => {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+    if (!raw) return null;
+    try {
+      const auth = JSON.parse(raw);
+      return auth?.token || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const numericOrderId = (orderId) => String(orderId || '').replace(/^SF/i, '');
+
+  const getNestingResultId = (block) => `RESULT-${block?.resultNo}`;
+  const getNestingPlateId = (row) => `PLATE-${row?.order}-${row?.plateSize}`;
+  const getNestingPartId = (row, idx) => `PART-${row?.order}-${row?.partName}-${idx}`;
+  const getNestingResultPartId = (resultNo, partRow, idx) =>
+    `RESULTPART-${resultNo}-${partRow?.partName ?? 'PART'}-${idx}`;
+
+  const ThumbnailBox = () => (
+    <div className="w-[52px] h-[32px] border border-gray-300 rounded bg-white flex items-center justify-center text-[10px] text-gray-400">
+      —
+    </div>
+  );
+
+  const canEditRole = (role) => userRole === role;
+
+  const isCheckedByRole = (role, id) => {
+    if (role === 'DESIGN') return designerSelectedRowIds.includes(id);
+    if (role === 'PRODUCTION') return productionSelectedRowIds.includes(id);
+    if (role === 'MACHINING') return machineSelectedRowIds.includes(id);
+    if (role === 'INSPECTION') return inspectionSelectedRowIds.includes(id);
+    return false;
+  };
+
+  const toggleRoleRow = (role, id) => {
+    if (!canEditRole(role)) return;
+
+    const toggle = (prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+
+    if (role === 'DESIGN') setDesignerSelectedRowIds(toggle);
+    if (role === 'PRODUCTION') setProductionSelectedRowIds(toggle);
+    if (role === 'MACHINING') setMachineSelectedRowIds(toggle);
+    if (role === 'INSPECTION') setInspectionSelectedRowIds(toggle);
+  };
+
+  const activeResultBlock = useMemo(() => {
+    if (!activeResultNo) return null;
+    return (
+      (resultBlocks || []).find((b) => Number(b?.resultNo) === Number(activeResultNo)) || null
+    );
+  }, [resultBlocks, activeResultNo]);
+
+  const nestingRowIdsForTab = useMemo(() => {
+    if (activePdfTab === 'results') return resultBlocks.map((b) => getNestingResultId(b));
+    if (activePdfTab === 'plate-info') return plateInfoRows.map((r) => getNestingPlateId(r));
+    if (activePdfTab === 'part-info') return partInfoRows.map((r, idx) => getNestingPartId(r, idx));
+    return [];
+  }, [activePdfTab, resultBlocks, plateInfoRows, partInfoRows]);
+
+  const nestingPartsListRowIds = useMemo(() => {
+    if (!activeResultNo) return [];
+    return (activeResultBlock?.parts || []).map((p, idx) => getNestingResultPartId(activeResultNo, p, idx));
+  }, [activeResultNo, activeResultBlock]);
+
+  const mergeSelectAllIds = (tabIds, partsListIds) => {
+    if (activePdfTab !== 'results') return tabIds;
+    return [...tabIds, ...partsListIds];
+  };
+
+  const isAllSelectedByRole = (role) => {
+    const ids = mergeSelectAllIds(nestingRowIdsForTab, nestingPartsListRowIds);
+    if (ids.length === 0) return false;
+
+    if (role === 'DESIGN') return ids.every((id) => designerSelectedRowIds.includes(id));
+    if (role === 'PRODUCTION') return ids.every((id) => productionSelectedRowIds.includes(id));
+    if (role === 'MACHINING') return ids.every((id) => machineSelectedRowIds.includes(id));
+    if (role === 'INSPECTION') return ids.every((id) => inspectionSelectedRowIds.includes(id));
+    return false;
+  };
+
+  const toggleSelectAllByRole = (role) => {
+    if (!canEditRole(role)) return;
+
+    const ids = mergeSelectAllIds(nestingRowIdsForTab, nestingPartsListRowIds);
+    if (ids.length === 0) return;
+
+    const apply = (prev) => {
+      const allSelected = ids.every((id) => prev.includes(id));
+      if (allSelected) return prev.filter((x) => !ids.includes(x));
+      const set = new Set(prev);
+      ids.forEach((id) => set.add(id));
+      return Array.from(set);
+    };
+
+    if (role === 'DESIGN') setDesignerSelectedRowIds(apply);
+    if (role === 'PRODUCTION') setProductionSelectedRowIds(apply);
+    if (role === 'MACHINING') setMachineSelectedRowIds(apply);
+    if (role === 'INSPECTION') setInspectionSelectedRowIds(apply);
+  };
+
+  const resetNestingPdfStates = () => {
+    setResultBlocks([]);
+    setPlateInfoRows([]);
+    setPartInfoRows([]);
+    setActiveResultNo(null);
+    setDesignerSelectedRowIds([]);
+    setProductionSelectedRowIds([]);
+    setMachineSelectedRowIds([]);
+    setInspectionSelectedRowIds([]);
+  };
+
+  const loadThreeCheckboxSelectionNesting = async (orderId) => {
+    const token = getToken();
+    if (!token) return;
+
+    const numericId = numericOrderId(orderId);
+    if (!numericId) return;
+
+    try {
+      const res = await fetch(`http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setDesignerSelectedRowIds(Array.isArray(data?.designerSelectedRowIds) ? data.designerSelectedRowIds : []);
+      setProductionSelectedRowIds(Array.isArray(data?.productionSelectedRowIds) ? data.productionSelectedRowIds : []);
+      setMachineSelectedRowIds(Array.isArray(data?.machineSelectedRowIds) ? data.machineSelectedRowIds : []);
+      setInspectionSelectedRowIds(Array.isArray(data?.inspectionSelectedRowIds) ? data.inspectionSelectedRowIds : []);
+    } catch {
+    }
+  };
+
+  const saveThreeCheckboxSelectionNesting = async () => {
+    const token = getToken();
+    if (!token) return;
+
+    const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
+    if (!current) return;
+    const [orderId] = current;
+
+    const numericId = numericOrderId(orderId);
+    if (!numericId) return;
+
+    const payload = {
+      designerSelectedRowIds: [],
+      productionSelectedRowIds: [],
+      machineSelectedRowIds: [],
+      inspectionSelectedRowIds: [],
+    };
+
+    if (userRole === 'DESIGN') payload.designerSelectedRowIds = designerSelectedRowIds;
+    if (userRole === 'PRODUCTION') payload.productionSelectedRowIds = productionSelectedRowIds;
+    if (userRole === 'MACHINING') payload.machineSelectedRowIds = machineSelectedRowIds;
+    if (userRole === 'INSPECTION') payload.inspectionSelectedRowIds = inspectionSelectedRowIds;
+
+    try {
+      const res = await fetch(`http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) setToast({ message: 'Selection saved successfully', type: 'success' });
+      else setToast({ message: 'Failed to save selection', type: 'error' });
+    } catch {
+      setToast({ message: 'Error saving selection', type: 'error' });
+    }
+  };
+
+  // ===========================
+  // ✅ MAIN: Detect PDF-2 vs PDF-1 (additive; PDF-1 unchanged)
+  // ===========================
+  const openPdfModalForAttachment = async (attachmentUrl, orderId) => {
+    setPdfModalUrl(attachmentUrl);
+    setPdfType('standard');
+    setActivePdfTab('subnest');
+    resetNestingPdfStates();
+
+    setPdfRows([]);
+    setPartsRows([]);
+    setMaterialRows([]);
+    setDesignerSelectedRowNos([]);
+    setProductionSelectedRowNos([]);
+    setMachineSelectedRowNos([]);
+
+    setDesignerPartsSelectedRowNos([]);
+    setProductionPartsSelectedRowNos([]);
+    setMachinePartsSelectedRowNos([]);
+    setInspectionPartsSelectedRowNos([]);
+
+    setDesignerMaterialSelectedRowNos([]);
+    setProductionMaterialSelectedRowNos([]);
+    setMachineMaterialSelectedRowNos([]);
+    setInspectionMaterialSelectedRowNos([]);
+
+    setIsRowsLoading(true);
+    setIsAnalyzingPdf(true);
+
+    const token = getToken();
+    if (!token) return;
+    const headers = { Authorization: `Bearer ${token}` };
+
+    try {
+      const plateApi = `http://localhost:8080/api/nesting/plate-info?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
+      const partApi = `http://localhost:8080/api/nesting/part-info?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
+      const resultApi = `http://localhost:8080/api/nesting/results?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
+
+      const [plateRes, partRes, resultRes] = await Promise.all([
+        fetch(plateApi, { headers }),
+        fetch(partApi, { headers }),
+        fetch(resultApi, { headers }),
+      ]);
+
+      const plateData = plateRes.ok ? await plateRes.json() : [];
+      const partData = partRes.ok ? await partRes.json() : [];
+      const resultData = resultRes.ok ? await resultRes.json() : [];
+
+      const hasNesting = Array.isArray(resultData) && resultData.length > 0;
+
+      if (hasNesting) {
+        setPdfType('nesting');
+        setActivePdfTab('results');
+
+        setPlateInfoRows(Array.isArray(plateData) ? plateData : []);
+        setPartInfoRows(Array.isArray(partData) ? partData : []);
+        setResultBlocks(Array.isArray(resultData) ? resultData : []);
+
+        const sorted = [...resultData].sort((a, b) => (a?.resultNo || 0) - (b?.resultNo || 0));
+        setActiveResultNo(sorted?.[0]?.resultNo ?? null);
+
+        await loadThreeCheckboxSelectionNesting(orderId);
+
+        setIsAnalyzingPdf(false);
+        setIsRowsLoading(false);
+        return;
+      }
+
+      const baseSubnest = `http://localhost:8080/api/pdf/subnest/by-url?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
+      const baseParts = `http://localhost:8080/api/pdf/subnest/parts/by-url?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
+      const baseMaterial = `http://localhost:8080/api/pdf/subnest/material-data/by-url?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
+
+      const [subnestRes, partsRes, materialRes] = await Promise.all([
+        fetch(baseSubnest, { headers }),
+        fetch(baseParts, { headers }),
+        fetch(baseMaterial, { headers }),
+      ]);
+
+      if (subnestRes.ok) {
+        const data = await subnestRes.json();
+        setPdfRows(Array.isArray(data) ? data : []);
+      }
+      if (partsRes.ok) {
+        const data = await partsRes.json();
+        setPartsRows(Array.isArray(data) ? data : []);
+      }
+      if (materialRes.ok) {
+        const data = await materialRes.json();
+        setMaterialRows(Array.isArray(data) ? data : []);
+      }
+
+      await fetchThreeCheckboxSelection(orderId);
+      await fetchPartsSelection(orderId);
+      await fetchMaterialSelection(orderId);
+    } catch {
+    } finally {
+      setIsAnalyzingPdf(false);
+      setIsRowsLoading(false);
+    }
+  };
 
   useEffect(() => {
     const fetchOrders = async () => {
@@ -584,55 +877,7 @@ export default function ProductionLinePage() {
                             onClick={async () => {
                               const url = pdfMap[order.id];
                               if (!url) return;
-                              setPdfModalUrl(url);
-                              setPdfRows([]);
-                              setPartsRows([]);
-                              setMaterialRows([]);
-                              setDesignerSelectedRowNos([]);
-                              setProductionSelectedRowNos([]);
-                              setMachineSelectedRowNos([]);
-
-                              const numericId = String(order.id).replace(/^SF/i, '');
-                              const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
-                              if (!numericId || !raw) return;
-                              try {
-                                const auth = JSON.parse(raw);
-                                const token = auth?.token;
-                                if (!token) return;
-
-                                const attachmentUrl = url;
-                                const baseSubnest = `http://localhost:8080/api/pdf/subnest/by-url?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
-                                const baseParts = `http://localhost:8080/api/pdf/subnest/parts/by-url?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
-                                const baseMaterial = `http://localhost:8080/api/pdf/subnest/material-data/by-url?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
-
-                                const headers = { Authorization: `Bearer ${token}` };
-
-                                const [subnestRes, partsRes, materialRes] = await Promise.all([
-                                  fetch(baseSubnest, { headers }),
-                                  fetch(baseParts, { headers }),
-                                  fetch(baseMaterial, { headers }),
-                                ]);
-
-                                if (subnestRes.ok) {
-                                  const data = await subnestRes.json();
-                                  setPdfRows(Array.isArray(data) ? data : []);
-                                }
-                                if (partsRes.ok) {
-                                  const data = await partsRes.json();
-                                  setPartsRows(Array.isArray(data) ? data : []);
-                                }
-                                if (materialRes.ok) {
-                                  const data = await materialRes.json();
-                                  setMaterialRows(Array.isArray(data) ? data : []);
-                                }
-
-                                // Fetch three-checkbox selection data
-                                await fetchThreeCheckboxSelection(order.id);
-                                // Fetch isolated Parts/Material selection data
-                                await fetchPartsSelection(order.id);
-                                await fetchMaterialSelection(order.id);
-                              } catch {
-                              }
+                              await openPdfModalForAttachment(url, order.id);
                             }}
                             className="text-blue-600 hover:text-blue-800 hover:underline"
                           >
@@ -734,8 +979,16 @@ export default function ProductionLinePage() {
                 <div className="w-1/2 border-r border-gray-200">
                   <PdfRowOverlayViewer
                     pdfUrl={pdfModalUrl}
-                    rows={activePdfTab === 'subnest' ? pdfRows : activePdfTab === 'parts' ? partsRows : materialRows}
-                    selectedRowIds={designerSelectedRowNos}
+                    rows={
+                      pdfType === 'nesting'
+                        ? []
+                        : activePdfTab === 'subnest'
+                          ? pdfRows
+                          : activePdfTab === 'parts'
+                            ? partsRows
+                            : materialRows
+                    }
+                    selectedRowIds={pdfType === 'nesting' ? [] : designerSelectedRowNos}
                     onToggleRow={() => {}}
                     initialScale={1.1}
                     showCheckboxes={false}
@@ -787,31 +1040,399 @@ export default function ProductionLinePage() {
                       </button> */}
                     </div>
                     <div className="flex gap-2">
-                      <button
-                        type="button"
-                        className={activePdfTab === 'subnest' ? 'font-semibold text-indigo-600' : 'text-gray-600'}
-                        onClick={() => setActivePdfTab('subnest')}
-                      >
-                        SubNest
-                      </button>
-                      <button
-                        type="button"
-                        className={activePdfTab === 'parts' ? 'font-semibold text-indigo-600' : 'text-gray-600'}
-                        onClick={() => setActivePdfTab('parts')}
-                      >
-                        Parts
-                      </button>
-                      <button
-                        type="button"
-                        className={activePdfTab === 'material' ? 'font-semibold text-indigo-600' : 'text-gray-600'}
-                        onClick={() => setActivePdfTab('material')}
-                      >
-                        Material Data
-                      </button>
+                      {pdfType === 'standard' ? (
+                        <>
+                          <button
+                            type="button"
+                            className={activePdfTab === 'subnest' ? 'font-semibold text-indigo-600' : 'text-gray-600'}
+                            onClick={() => setActivePdfTab('subnest')}
+                          >
+                            SubNest
+                          </button>
+                          <button
+                            type="button"
+                            className={activePdfTab === 'parts' ? 'font-semibold text-indigo-600' : 'text-gray-600'}
+                            onClick={() => setActivePdfTab('parts')}
+                          >
+                            Parts
+                          </button>
+                          <button
+                            type="button"
+                            className={activePdfTab === 'material' ? 'font-semibold text-indigo-600' : 'text-gray-600'}
+                            onClick={() => setActivePdfTab('material')}
+                          >
+                            Material Data
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className={activePdfTab === 'results' ? 'font-semibold text-indigo-600' : 'text-gray-600'}
+                            onClick={() => setActivePdfTab('results')}
+                          >
+                            Results
+                          </button>
+                          <button
+                            type="button"
+                            className={activePdfTab === 'plate-info' ? 'font-semibold text-indigo-600' : 'text-gray-600'}
+                            onClick={() => setActivePdfTab('plate-info')}
+                          >
+                            Plate Info
+                          </button>
+                          <button
+                            type="button"
+                            className={activePdfTab === 'part-info' ? 'font-semibold text-indigo-600' : 'text-gray-600'}
+                            onClick={() => setActivePdfTab('part-info')}
+                          >
+                            Part Info
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                   <div className="flex-1 overflow-auto p-2 text-xs text-gray-900">
-                    {activePdfTab === 'subnest' && (
+                    {(isAnalyzingPdf || isRowsLoading) && (
+                      <div className="flex flex-col items-center justify-center h-full">
+                        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600 mb-4" />
+                        <p className="text-sm text-gray-600">
+                          {isAnalyzingPdf ? 'Detecting PDF type...' : 'Loading PDF data...'}
+                        </p>
+                      </div>
+                    )}
+
+                    {!isAnalyzingPdf && !isRowsLoading && pdfType === 'nesting' && (
+                      <>
+                        {activePdfTab === 'results' && (
+                          <>
+                            <div className="mb-2">
+                              <div className="text-[11px] font-semibold text-gray-700 mb-1">
+                                Select Result (1..15)
+                              </div>
+
+                              <div className="flex gap-2 overflow-x-auto pb-2">
+                                {Array.from({ length: 15 }, (_, i) => i + 1).map((no) => {
+                                  const exists = resultBlocks.some((b) => Number(b?.resultNo) === no);
+
+                                  return (
+                                    <button
+                                      key={no}
+                                      type="button"
+                                      disabled={!exists}
+                                      onClick={() => exists && setActiveResultNo(no)}
+                                      className={`shrink-0 px-3 py-1 rounded-full border text-[11px] font-semibold transition ${
+                                        !exists
+                                          ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                                          : activeResultNo === no
+                                            ? 'bg-indigo-600 text-white border-indigo-600'
+                                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                      }`}
+                                    >
+                                      Result {no}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            <table className="min-w-full text-xs border border-gray-200">
+                              <thead>
+                                <tr className="text-left text-gray-700 border-b border-gray-200">
+                                  <th className="px-2 py-1">Result</th>
+                                  <th className="px-2 py-1">Thumbnail</th>
+                                  <th className="px-2 py-1">Material</th>
+                                  <th className="px-2 py-1">Thickness</th>
+                                  <th className="px-2 py-1">Plate Size</th>
+                                  <th className="px-2 py-1">Proc Time</th>
+
+                                  {[
+                                    { label: 'D', role: 'DESIGN' },
+                                    { label: 'P', role: 'PRODUCTION' },
+                                    { label: 'M', role: 'MACHINING' },
+                                    { label: 'I', role: 'INSPECTION' },
+                                  ].map((x) => (
+                                    <th key={x.role} className="px-2 py-1 text-center">
+                                      <div className="flex flex-col items-center gap-1">
+                                        <span>{x.label}</span>
+                                        <input
+                                          type="checkbox"
+                                          checked={isAllSelectedByRole(x.role)}
+                                          disabled={!canEditRole(x.role)}
+                                          onChange={() => toggleSelectAllByRole(x.role)}
+                                        />
+                                      </div>
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+
+                              <tbody className="text-gray-900 divide-y divide-gray-100">
+                                {resultBlocks
+                                  .slice()
+                                  .sort((a, b) => (a?.resultNo || 0) - (b?.resultNo || 0))
+                                  .map((block) => {
+                                    const id = getNestingResultId(block);
+                                    const active = Number(block?.resultNo) === Number(activeResultNo);
+
+                                    return (
+                                      <tr
+                                        key={id}
+                                        className={active ? 'bg-indigo-50' : ''}
+                                        onClick={() => setActiveResultNo(block?.resultNo)}
+                                      >
+                                        <td className="px-2 py-1 font-semibold">{block.resultNo}</td>
+                                        <td className="px-2 py-1">
+                                          <ThumbnailBox />
+                                        </td>
+                                        <td className="px-2 py-1">{block.material}</td>
+                                        <td className="px-2 py-1">{block.thickness}</td>
+                                        <td className="px-2 py-1">{block.plateSize}</td>
+                                        <td className="px-2 py-1">{block.planProcessTime}</td>
+
+                                        {['DESIGN', 'PRODUCTION', 'MACHINING', 'INSPECTION'].map((role) => (
+                                          <td
+                                            key={role}
+                                            className="px-2 py-1 text-center"
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              checked={isCheckedByRole(role, id)}
+                                              disabled={!canEditRole(role)}
+                                              onChange={() => toggleRoleRow(role, id)}
+                                            />
+                                          </td>
+                                        ))}
+                                      </tr>
+                                    );
+                                  })}
+                              </tbody>
+                            </table>
+
+                            <div className="mt-3 border border-gray-200 rounded">
+                              <div className="px-2 py-1 text-[11px] font-semibold text-gray-700 border-b border-gray-200 flex items-center justify-between">
+                                <span>
+                                  Parts List {activeResultNo ? `(Result ${activeResultNo})` : ''}
+                                </span>
+                                <span className="text-gray-500 font-normal">
+                                  {(activeResultBlock?.parts || []).length} Parts Total
+                                </span>
+                              </div>
+
+                              <table className="min-w-full text-xs">
+                                <thead>
+                                  <tr className="text-left text-gray-700 border-b border-gray-200">
+                                    <th className="px-2 py-1">Thumbnail</th>
+                                    <th className="px-2 py-1">Part Name</th>
+                                    <th className="px-2 py-1">Size</th>
+                                    <th className="px-2 py-1 text-center">Count</th>
+
+                                    {[
+                                      { label: 'D', role: 'DESIGN' },
+                                      { label: 'P', role: 'PRODUCTION' },
+                                      { label: 'M', role: 'MACHINING' },
+                                      { label: 'I', role: 'INSPECTION' },
+                                    ].map((x) => (
+                                      <th key={x.role} className="px-2 py-1 text-center">
+                                        <div className="flex flex-col items-center gap-1">
+                                          <span>{x.label}</span>
+                                          <input
+                                            type="checkbox"
+                                            checked={isAllSelectedByRole(x.role)}
+                                            disabled={!canEditRole(x.role)}
+                                            onChange={() => toggleSelectAllByRole(x.role)}
+                                          />
+                                        </div>
+                                      </th>
+                                    ))}
+                                  </tr>
+                                </thead>
+
+                                <tbody className="divide-y divide-gray-100 text-gray-900">
+                                  {(activeResultBlock?.parts || []).map((p, idx) => {
+                                    const rowId = getNestingResultPartId(activeResultNo, p, idx);
+
+                                    return (
+                                      <tr key={rowId}>
+                                        <td className="px-2 py-1">
+                                          <ThumbnailBox />
+                                        </td>
+                                        <td className="px-2 py-1 font-medium">{p.partName}</td>
+                                        <td className="px-2 py-1 whitespace-nowrap">{p.size}</td>
+                                        <td className="px-2 py-1 text-center">{p.count}</td>
+
+                                        {['DESIGN', 'PRODUCTION', 'MACHINING', 'INSPECTION'].map((role) => (
+                                          <td
+                                            key={role}
+                                            className="px-2 py-1 text-center"
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              checked={isCheckedByRole(role, rowId)}
+                                              disabled={!canEditRole(role)}
+                                              onChange={() => toggleRoleRow(role, rowId)}
+                                            />
+                                          </td>
+                                        ))}
+                                      </tr>
+                                    );
+                                  })}
+
+                                  {(activeResultBlock?.parts || []).length === 0 && (
+                                    <tr>
+                                      <td className="px-2 py-3 text-center text-gray-400" colSpan={8}>
+                                        No Parts List found in this Result.
+                                      </td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </>
+                        )}
+
+                        {pdfType === 'nesting' && activePdfTab === 'plate-info' && (
+                          <table className="min-w-full text-xs border border-gray-200">
+                            <thead>
+                              <tr className="text-left text-gray-700 border-b border-gray-200">
+                                <th className="px-2 py-1">Order</th>
+                                {/* <th className="px-2 py-1">Part Name</th> */}
+                                <th className="px-2 py-1">Thumbnail</th>
+                                <th className="px-2 py-1">Size (mm × mm)</th>
+                                <th className="px-2 py-1">Parts Count</th>
+                                <th className="px-2 py-1">Cut Total Length</th>
+                                <th className="px-2 py-1">Move Total Length</th>
+                                <th className="px-2 py-1">Plan Process Time</th>
+                                <th className="px-2 py-1">Count</th>
+
+                                {[
+                                  { label: 'D', role: 'DESIGN' },
+                                  { label: 'P', role: 'PRODUCTION' },
+                                  { label: 'M', role: 'MACHINING' },
+                                  { label: 'I', role: 'INSPECTION' },
+                                ].map((x) => (
+                                  <th key={x.role} className="px-2 py-1 text-center">
+                                    <div className="flex flex-col items-center gap-1">
+                                      <span>{x.label}</span>
+                                      <input
+                                        type="checkbox"
+                                        checked={isAllSelectedByRole(x.role)}
+                                        disabled={!canEditRole(x.role)}
+                                        onChange={() => toggleSelectAllByRole(x.role)}
+                                      />
+                                    </div>
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+
+                            <tbody className="text-gray-900 divide-y divide-gray-100">
+                              {plateInfoRows.map((row, idx) => {
+                                const id = getNestingPlateId(row);
+                                return (
+                                  <tr key={id + idx}>
+                                    <td className="px-2 py-1 font-medium">{row.order}</td>
+                                    {/* <td className="px-2 py-1">{row.partName}</td> */}
+                                    <td className="px-2 py-1">
+                                      <ThumbnailBox />
+                                    </td>
+                                    <td className="px-2 py-1">{row.plateSize || row.size}</td>
+                                    <td className="px-2 py-1 text-center">{row.partsCount}</td>
+                                    <td className="px-2 py-1 text-center">{row.cutTotalLength}</td>
+                                    <td className="px-2 py-1 text-center">{row.moveTotalLength}</td>
+                                    <td className="px-2 py-1 text-center">{row.planProcessTime}</td>
+                                    <td className="px-2 py-1 text-center">{row.count}</td>
+
+                                    {['DESIGN', 'PRODUCTION', 'MACHINING', 'INSPECTION'].map((role) => (
+                                      <td key={role} className="px-2 py-1 text-center">
+                                        <input
+                                          type="checkbox"
+                                          checked={isCheckedByRole(role, id)}
+                                          disabled={!canEditRole(role)}
+                                          onChange={() => toggleRoleRow(role, id)}
+                                        />
+                                      </td>
+                                    ))}
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        )}
+
+                        {pdfType === 'nesting' && activePdfTab === 'part-info' && (
+                          <table className="min-w-full text-xs border border-gray-200">
+                            <thead>
+                              <tr className="text-left text-gray-700 border-b border-gray-200">
+                                <th className="px-2 py-1">Order</th>
+                                <th className="px-2 py-1">Part Name</th>
+                                <th className="px-2 py-1">Thumbnail</th>
+                                <th className="px-2 py-1">Size (mm × mm)</th>
+                                <th className="px-2 py-1">Parts Count</th>
+                                <th className="px-2 py-1">Nest Count</th>
+                                <th className="px-2 py-1">Remain Count</th>
+                                <th className="px-2 py-1">Processed</th>
+
+                                {[
+                                  { label: 'D', role: 'DESIGN' },
+                                  { label: 'P', role: 'PRODUCTION' },
+                                  { label: 'M', role: 'MACHINING' },
+                                  { label: 'I', role: 'INSPECTION' },
+                                ].map((x) => (
+                                  <th key={x.role} className="px-2 py-1 text-center">
+                                    <div className="flex flex-col items-center gap-1">
+                                      <span>{x.label}</span>
+                                      <input
+                                        type="checkbox"
+                                        checked={isAllSelectedByRole(x.role)}
+                                        disabled={!canEditRole(x.role)}
+                                        onChange={() => toggleSelectAllByRole(x.role)}
+                                      />
+                                    </div>
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+
+                            <tbody className="text-gray-900 divide-y divide-gray-100">
+                              {partInfoRows.map((row, idx) => {
+                                const id = getNestingPartId(row, idx);
+                                return (
+                                  <tr key={id}>
+                                    <td className="px-2 py-1 font-medium">{row.order}</td>
+                                    <td className="px-2 py-1">{row.partName}</td>
+                                    <td className="px-2 py-1">
+                                      <ThumbnailBox />
+                                    </td>
+                                    <td className="px-2 py-1">{row.size}</td>
+                                    <td className="px-2 py-1 text-center">{row.partsCount}</td>
+                                    <td className="px-2 py-1 text-center">{row.nestCount}</td>
+                                    <td className="px-2 py-1 text-center">{row.remainCount}</td>
+                                    <td className="px-2 py-1 text-center">{row.processed}</td>
+
+                                    {['DESIGN', 'PRODUCTION', 'MACHINING', 'INSPECTION'].map((role) => (
+                                      <td key={role} className="px-2 py-1 text-center">
+                                        <input
+                                          type="checkbox"
+                                          checked={isCheckedByRole(role, id)}
+                                          disabled={!canEditRole(role)}
+                                          onChange={() => toggleRoleRow(role, id)}
+                                        />
+                                      </td>
+                                    ))}
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        )}
+                      </>
+                    )}
+
+                    {!isAnalyzingPdf && !isRowsLoading && pdfType === 'standard' && (
+                      <>
+                        {activePdfTab === 'subnest' && (
                       <table className="min-w-full border border-gray-200">
                         <thead>
                           <tr className="text-left text-gray-600">
@@ -902,7 +1523,7 @@ export default function ProductionLinePage() {
                         </tbody>
                       </table>
                     )}
-                    {activePdfTab === 'parts' && (
+                        {activePdfTab === 'parts' && (
                       <table className="min-w-full border border-gray-200">
                         <thead>
                           <tr className="text-left text-gray-600">
@@ -981,7 +1602,7 @@ export default function ProductionLinePage() {
                         </tbody>
                       </table>
                     )}
-                    {activePdfTab === 'material' && (
+                        {activePdfTab === 'material' && (
                       <table className="min-w-full border border-gray-200">
                         <thead>
                           <tr className="text-left text-gray-600">
@@ -1060,7 +1681,33 @@ export default function ProductionLinePage() {
                         </tbody>
                       </table>
                     )}
+                      </>
+                    )}
                   </div>
+                  {!isAnalyzingPdf && !isRowsLoading && pdfType === 'nesting' && (
+                    <div className="p-3 border-t border-gray-200 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={saveThreeCheckboxSelectionNesting}
+                        className="flex-1 rounded-md bg-indigo-600 text-white text-xs py-2"
+                      >
+                        Save Selection (Role)
+                      </button>
+                      {productionSelectedRowIds.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await ensureMachinesLoaded();
+                            setShowSelectMachineModal(true);
+                          }}
+                          className="flex-1 rounded-md bg-indigo-600 text-white text-xs py-2"
+                        >
+                          Select Machine
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {pdfType === 'standard' && (
                   <div className="p-3 border-t border-gray-200 flex items-center justify-end gap-3 text-xs">
                     {activePdfTab === 'subnest' && (
                       <button
@@ -1096,6 +1743,7 @@ export default function ProductionLinePage() {
                       </button>
                     )}
                   </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1150,13 +1798,25 @@ export default function ProductionLinePage() {
               <div className="flex items-center justify-end gap-3">
                 <button
                   type="button"
-                  disabled={isSendingToMachine || !selectedMachineId || productionSelectedRowNos.length === 0}
+                  disabled={
+                    isSendingToMachine ||
+                    !selectedMachineId ||
+                    (pdfType === 'nesting'
+                      ? productionSelectedRowIds.length === 0
+                      : productionSelectedRowNos.length === 0)
+                  }
                   onClick={async () => {
                     const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
                     if (!current) return;
                     const [orderId] = current;
                     const numericId = String(orderId).replace(/^SF/i, '');
                     if (!numericId) return;
+
+                    const selectedIds =
+                      pdfType === 'nesting' ? productionSelectedRowIds : productionSelectedRowNos.map(String);
+
+                    const selectedMachine = machines.find((m) => String(m.id) === String(selectedMachineId));
+                    const selectedMachineName = selectedMachine?.machineName ?? selectedMachine?.name;
 
                     const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
                     if (!raw) return;
@@ -1167,14 +1827,17 @@ export default function ProductionLinePage() {
                     try {
                       setIsSendingToMachine(true);
                       // Save three-checkbox selection first
-                      await saveThreeCheckboxSelection();
+                      await (pdfType === 'nesting'
+                        ? saveThreeCheckboxSelectionNesting()
+                        : saveThreeCheckboxSelection());
                       
                       // The /machining-selection endpoint already creates status entries
                       
                       // Then send to machining with machine selection
                       console.log('Sending to machine with data:', {
-                        selectedRowIds: productionSelectedRowNos.map(String),
+                        selectedRowIds: selectedIds,
                         machineId: selectedMachineId,
+                        ...(pdfType === 'nesting' ? { machineName: selectedMachineName } : {}),
                         attachmentUrl: pdfModalUrl,
                       });
                       const res = await fetch(`http://localhost:8080/pdf/order/${numericId}/machining-selection`, {
@@ -1184,8 +1847,9 @@ export default function ProductionLinePage() {
                           Authorization: `Bearer ${token}`,
                         },
                         body: JSON.stringify({
-                          selectedRowIds: productionSelectedRowNos.map(String),
+                          selectedRowIds: selectedIds,
                           machineId: selectedMachineId,
+                          ...(pdfType === 'nesting' ? { machineName: selectedMachineName } : {}),
                           attachmentUrl: pdfModalUrl,
                         }),
                       });

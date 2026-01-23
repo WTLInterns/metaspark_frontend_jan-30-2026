@@ -45,7 +45,14 @@ function DetailsPanel({ order, onClose }) {
               <div className="mb-4">
                 <div className="text-xs text-black mb-1">Products</div>
                 <div className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-black">
-                  {order.products}
+                  {Array.isArray(order.products)
+                    ? order.products
+                        .map((p) => p && (p.productName || p.productCode))
+                        .filter(Boolean)
+                        .join(', ')
+                    : order.products && typeof order.products === 'object'
+                      ? (order.products.productName || order.products.productCode || 'No Product')
+                      : (order.products || 'No Product')}
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

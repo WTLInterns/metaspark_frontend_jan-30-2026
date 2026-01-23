@@ -3,7 +3,14 @@ import { createHeaders } from '@/utils/api';
 export const downloadReport = async ({ orderDisplayId, type }) => {
   try {
     const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
-    const orderId = orderDisplayId.replace('SF', '');
+
+    if (!orderDisplayId || (typeof orderDisplayId !== 'string' && typeof orderDisplayId !== 'number')) {
+      console.error('Invalid orderDisplayId for report download:', orderDisplayId);
+      return;
+    }
+
+    const orderDisplayIdStr = String(orderDisplayId);
+    const orderId = orderDisplayIdStr.replace('SF', '');
 
     const endpointByType = {
       design: `/api/orders/${orderId}/reports/design`,
@@ -43,7 +50,7 @@ export const downloadReport = async ({ orderDisplayId, type }) => {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${orderDisplayId}_${typeLabel}_Report.pdf`;
+    a.download = `${orderDisplayIdStr}_${typeLabel}_Report.pdf`;
     document.body.appendChild(a);
     a.click();
     a.remove();

@@ -28,10 +28,8 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
-  // Enable ESLint during builds
-  eslint: {
-    ignoreDuringBuilds: false,
-  },
+  // ESLint configuration is no longer supported in next.config.js for Next.js 16+
+  // Move ESLint configuration to .eslintrc.json if needed
 };
 
 module.exports = nextConfig;

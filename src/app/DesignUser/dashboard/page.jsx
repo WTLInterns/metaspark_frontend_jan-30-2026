@@ -21,6 +21,8 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
   const [statusHistory, setStatusHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [selectedAttachment, setSelectedAttachment] = useState(null);
+  const [departmentUsers, setDepartmentUsers] = useState({});
+  const [selectedEmployee, setSelectedEmployee] = useState('');
 
   const getCurrentUserRole = () => {
     try {
@@ -133,6 +135,49 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
     setAttachment(e.target.files[0]);
   };
 
+  // Fetch department users
+  useEffect(() => {
+    const fetchDepartmentUsers = async () => {
+      try {
+        console.log('Fetching department users...');
+        const authData = JSON.parse(localStorage.getItem('swiftflow-user'));
+        const token = authData?.token;
+        
+        if (!token) {
+          console.error('No token found in localStorage');
+          return;
+        }
+        
+        const departments = ['DESIGN', 'PRODUCTION', 'MACHINING', 'INSPECTION'];
+        const usersData = {};
+        
+        for (const dept of departments) {
+          console.log(`Fetching users for department: ${dept}`);
+          const response = await fetch(`http://localhost:8080/users/by-department/${dept}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          
+          if (response.ok) {
+            const users = await response.json();
+            console.log(`Users for ${dept}:`, users);
+            usersData[dept] = users;
+          } else {
+            console.error(`Failed to fetch users for ${dept}:`, response.status);
+          }
+        }
+        
+        console.log('Final department users data:', usersData);
+        setDepartmentUsers(usersData);
+      } catch (error) {
+        console.error('Error fetching department users:', error);
+      }
+    };
+
+    fetchDepartmentUsers();
+  }, []);
+
   // Fetch status history
   useEffect(() => {
     const fetchStatusHistory = async () => {
@@ -225,11 +270,38 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
         throw new Error('Failed to update status');
       }
 
+      // If an employee is selected and status is a department, assign the employee to the order
+      if (selectedEmployee && ['DESIGN', 'PRODUCTION', 'MACHINING', 'INSPECTION'].includes(newStatus)) {
+        const assignResponse = await fetch('http://localhost:8080/users/assign-to-order', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            userId: selectedEmployee,
+            orderId: numericOrderId,
+            department: newStatus,
+          }),
+        });
+
+        if (assignResponse.ok) {
+          const assignResult = await assignResponse.json();
+          console.log('Employee assigned:', assignResult.message);
+          toast.success('Status updated and employee assigned successfully!');
+        } else {
+          console.error('Failed to assign employee');
+          toast.success('Status updated successfully!');
+        }
+      } else {
+        toast.success('Status updated successfully!');
+      }
+
       // Reset form
       setNewStatus('');
       setComment('');
       setAttachment(null);
-      toast.success('Status updated successfully!');
+      setSelectedEmployee('');
 
       // Immediately refresh status history so the UI shows the latest entry
       try {
@@ -626,7 +698,10 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
                     <label className="block text-xs text-black mb-1">New Status</label>
                     <select 
                       value={newStatus}
-                      onChange={(e) => setNewStatus(e.target.value)}
+                      onChange={(e) => {
+                        setNewStatus(e.target.value);
+                        setSelectedEmployee(''); // Reset employee selection when status changes
+                      }}
                       className="w-full border border-gray-200 rounded-md px-2 py-2 text-sm"
                       disabled={isSubmitting}
                     >
@@ -636,6 +711,34 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
                       ))}
                     </select>
                   </div>
+                  
+                  {/* Employee selection dropdown - only show when status is selected */}
+                  {newStatus && ['DESIGN', 'PRODUCTION', 'MACHINING', 'INSPECTION'].includes(newStatus) && (
+                    <div>
+                      <label className="block text-xs text-black mb-1">Assign to Employee</label>
+                      <select 
+                        value={selectedEmployee}
+                        onChange={(e) => setSelectedEmployee(e.target.value)}
+                        className="w-full border border-gray-200 rounded-md px-2 py-2 text-sm"
+                        disabled={isSubmitting}
+                      >
+                        <option value="">Select employee...</option>
+                        {departmentUsers[newStatus] && departmentUsers[newStatus].length > 0 ? (
+                          departmentUsers[newStatus].map(user => (
+                            <option key={user.id} value={user.id}>
+                              {user.fullName || user.email}
+                            </option>
+                          ))
+                        ) : (
+                          <option value="" disabled>No employees available</option>
+                        )}
+                      </select>
+                      <div className="text-xs text-gray-500 mt-1">
+                        Status: {newStatus} | Users: {departmentUsers[newStatus]?.length || 0}
+                      </div>
+                    </div>
+                  )}
+                  
                   <div>
                     <label className="block text-xs text-black mb-1">Attachment (Optional)</label>
                     <input 
@@ -746,25 +849,15 @@ export default function DashboardPage() {
     try {
       setLoading(true);
       setError(null);
+      
+      // For DesignUser dashboard, fetch ALL orders (not just assigned ones)
       const orders = await orderApi.getAllOrders();
-      console.log('Orders data:', orders);
+      
+      console.log('Design Dashboard - All Orders:', orders);
 
       // Transform the API response to match the table structure
-      const transformedOrders = orders.map(order => {
-        // Format the date to "27 Nov 2025" format
-        let formattedDate = 'Unknown Date';
-        if (order.dateAdded) {
-          // Assuming dateAdded is in format "dd-MM-yyyy"
-          const [day, month, year] = order.dateAdded.split('-');
-          if (day && month && year) {
-            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            const monthIndex = parseInt(month) - 1;
-            if (monthIndex >= 0 && monthIndex < 12) {
-              formattedDate = `${parseInt(day)} ${monthNames[monthIndex]} ${year}`;
-            }
-          }
-        }
-
+      // Sort latest first by numeric orderId so newest orders appear at the top
+      const transformedOrders = (Array.isArray(orders) ? orders.slice().sort((a, b) => (b.orderId || 0) - (a.orderId || 0)) : []).map(order => {
         // Map department to match the badge styling
         let department = 'ENQUIRY'; // Default
         if (order.department) {
@@ -785,16 +878,10 @@ export default function DashboardPage() {
 
             return names.length ? names.join(', ') : 'No Product';
           })(),
-          date: formattedDate,
+          date: '', // Remove date as requested
           status: order.status || 'Inquiry',
           department: department, // Use the actual department from API
-          units: order.units || '',
-          material: order.material || '',
-          customers: order.customers || [], // Preserve the full customers array for the details panel
-          designProgress: order.designProgress ?? 0,
-          productionProgress: order.productionProgress ?? 0,
-          machiningProgress: order.machiningProgress ?? 0,
-          inspectionProgress: order.inspectionProgress ?? 0,
+          orderId: order.orderId,
         };
       });
 
@@ -1458,8 +1545,7 @@ function OrdersTable({ rows = [], statusFilter = 'All', departmentFilter = 'All'
             <th className="py-2 px-3">Order ID</th>
             <th className="py-2 px-3">Customer</th>
             <th className="py-2 px-3">Product(s)</th>
-            <th className="py-2 px-3">Date Created</th>
-            <th className="py-2 px-3">Status</th>
+            <th className="py-2 px-3">Department</th>
             <th className="py-2 px-3">Actions</th>
           </tr>
         </thead>
@@ -1477,7 +1563,6 @@ function OrdersTable({ rows = [], statusFilter = 'All', departmentFilter = 'All'
               </td>
               <td className="py-2 px-3 text-black">{r.customer}</td>
               <td className="py-2 px-3 text-black">{r.products}</td>
-              <td className="py-2 px-3 text-black">{r.date}</td>
               <td className="py-2 px-3">
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs border whitespace-nowrap ${
                   r.department === 'DESIGN'

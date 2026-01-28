@@ -62,9 +62,19 @@ const createHeaders = (customHeaders = {}) => {
 // Handle API responses and errors
 const handleResponse = async (response) => {
   if (response.status === 401) {
-    // Token expired or invalid. Do NOT redirect here.
-    // Let the higher-level apiRequest logic try a token refresh first.
-    // If refresh also fails, apiRequest will clear storage and redirect to login.
+    // Token expired or invalid - show user-friendly message and redirect
+    if (typeof window !== 'undefined') {
+      // Clear all auth data
+      localStorage.removeItem('swiftflow-user');
+      localStorage.removeItem('swiftflow-token');
+      localStorage.removeItem('auth-token');
+      
+      // Show user-friendly message
+      alert('Your session has expired. Please log in again to continue.');
+      
+      // Redirect to login page
+      window.location.href = '/login';
+    }
     throw new Error('Session expired. Please log in again.');
   }
 

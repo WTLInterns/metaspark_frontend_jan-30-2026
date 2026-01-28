@@ -13,13 +13,153 @@ import { getVisibleReportDefsForCurrentUser } from '@/utils/reportVisibility';
 import { downloadReport as downloadReportUtil } from '@/utils/downloadReport';
 import StatusHistoryTimeline from '@/components/StatusHistoryTimeline';
 import OrderDetailsModal from '@/components/OrderDetailsModal';
+import { userService } from './userService';
 
 function DetailsPanel({ order, onClose, onUpdateOrder }) {
+  const [assignedUsers, setAssignedUsers] = useState({
+    DESIGN: [],
+    PRODUCTION: [],
+    MACHINING: [],
+    INSPECTION: [],
+  });
 
-  // Add state for the status update form
+  const [orderAssignedUsers, setOrderAssignedUsers] = useState({
+    DESIGN: null,
+    PRODUCTION: null,
+    MACHINING: null,
+    INSPECTION: null,
+  });
+
+  useEffect(() => {
+    fetchAssignedUsers();
+    fetchOrderAssignedUsers();
+  }, []);
+
+  const fetchOrderAssignedUsers = async () => {
+    try {
+      const orderId = order?.orderId || order?.id;
+      if (!orderId) return;
+
+      const departments = ['DESIGN', 'PRODUCTION', 'MACHINING', 'INSPECTION'];
+      const assignedData = {};
+      
+      for (const dept of departments) {
+        try {
+          const response = await fetch(`http://localhost:8080/users/assigned-to-order/${orderId}/${dept}`, {
+            headers: {
+              'Authorization': `Bearer ${JSON.parse(localStorage.getItem('swiftflow-user'))?.token}`
+            }
+          });
+          
+          if (response.ok) {
+            const assignedUser = await response.json();
+            
+            // If it's a MACHINING user, fetch their machine details
+            if (dept === 'MACHINING' && assignedUser && assignedUser.machineId) {
+              try {
+                const machineResponse = await fetch(`http://localhost:8080/machine/getMachine/${assignedUser.machineId}`, {
+                  headers: {
+                    'Authorization': `Bearer ${JSON.parse(localStorage.getItem('swiftflow-user'))?.token}`
+                  }
+                });
+                
+                if (machineResponse.ok) {
+                  const machine = await machineResponse.json();
+                  assignedUser.machineName = machine.machineName;
+                  assignedUser.machineStatus = machine.status;
+                }
+              } catch (machineError) {
+                console.error('Error fetching machine details:', machineError);
+              }
+            }
+            
+            assignedData[dept] = assignedUser;
+          } else {
+            assignedData[dept] = null;
+          }
+        } catch (error) {
+          assignedData[dept] = null;
+        }
+      }
+      
+      setOrderAssignedUsers(assignedData);
+    } catch (error) {
+      console.error('Error fetching order assigned users:', error);
+    }
+  };
+
+  const fetchAssignedUsers = async () => {
+    try {
+      const departments = ['DESIGN', 'PRODUCTION', 'MACHINING', 'INSPECTION'];
+      const usersData = {};
+      
+      for (const dept of departments) {
+        const users = await userService.getUsersByDepartment(dept);
+        usersData[dept] = users;
+      }
+      
+      setAssignedUsers(usersData);
+    } catch (error) {
+      console.error('Error fetching assigned users:', error);
+    }
+  };
+
+  const handleAssignUser = async (department, userId) => {
+    try {
+      if (!userId) {
+        // Unassign user
+        console.log(`Unassigning user from ${department}`);
+        return;
+      }
+
+      // Get token from localStorage
+      const authData = JSON.parse(localStorage.getItem('swiftflow-user'));
+      const token = authData?.token;
+
+      // Get the order ID from the order object
+      const orderId = order?.orderId || order?.id;
+      if (!orderId) {
+        console.error('Order ID not found');
+        return;
+      }
+
+      // Call the backend API to assign the user to the order
+      const response = await fetch('http://localhost:8080/users/assign-to-order', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          userId: userId,
+          orderId: orderId,
+          department: department,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to assign user');
+      }
+
+      const result = await response.json();
+      console.log(result.message);
+      
+      // Show success message
+      const selectedUser = assignedUsers[department]?.find(user => user.id == userId);
+      if (selectedUser) {
+        console.log(`Assigned ${selectedUser.fullName} to ${department} for order ${orderId}`);
+        // Refresh the assigned users for this order
+        fetchOrderAssignedUsers();
+      }
+    } catch (error) {
+      console.error('Error assigning user:', error);
+    }
+  };
+
   const [newStatus, setNewStatus] = useState('');
   const [comment, setComment] = useState('');
   const [attachment, setAttachment] = useState(null);
+  const [selectedEmployee, setSelectedEmployee] = useState('');
 
   const [stageProgress, setStageProgress] = useState({
     designProgress: Number(order?.designProgress ?? 0),
@@ -266,10 +406,37 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
         throw new Error('Failed to update status');
       }
 
+      // If an employee is selected and status is a department, assign the employee to the order
+      if (selectedEmployee && ['DESIGN', 'PRODUCTION', 'MACHINING', 'INSPECTION'].includes(newStatus)) {
+        const assignResponse = await fetch('http://localhost:8080/users/assign-to-order', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            userId: selectedEmployee,
+            orderId: numericOrderId,
+            department: newStatus,
+          }),
+        });
+
+        if (assignResponse.ok) {
+          const assignResult = await assignResponse.json();
+          console.log('Employee assigned:', assignResult.message);
+          toast.success('Status updated and employee assigned successfully!');
+        } else {
+          console.error('Failed to assign employee');
+          toast.success('Status updated successfully!');
+        }
+      } else {
+        toast.success('Status updated successfully!');
+      }
+
       setNewStatus('');
       setComment('');
       setAttachment(null);
-      toast.success('Status updated successfully!');
+      setSelectedEmployee('');
 
       if (onUpdateOrder) {
         onUpdateOrder(numericOrderId, newStatus);
@@ -568,7 +735,10 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
                     <label className="block text-xs text-black mb-1">New Status</label>
                     <select
                       value={newStatus}
-                      onChange={(e) => setNewStatus(e.target.value)}
+                      onChange={(e) => {
+                        setNewStatus(e.target.value);
+                        setSelectedEmployee(''); // Reset employee selection when status changes
+                      }}
                       className="w-full text-sm text-gray-600 h-9 rounded-md border border-gray-200 px-2 py-2"
                       disabled={isSubmitting}
                     >
@@ -578,6 +748,31 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
                       ))}
                     </select>
                   </div>
+                  {newStatus && ['DESIGN', 'PRODUCTION', 'MACHINING', 'INSPECTION'].includes(newStatus) && (
+                    <div>
+                      <label className="block text-xs text-black mb-1">Assign to Employee</label>
+                      <select 
+                        value={selectedEmployee}
+                        onChange={(e) => setSelectedEmployee(e.target.value)}
+                        className="w-full text-sm text-gray-600 h-9 rounded-md border border-gray-200 px-2 py-2"
+                        disabled={isSubmitting}
+                      >
+                        <option value="">Select employee...</option>
+                        {assignedUsers[newStatus] && assignedUsers[newStatus].length > 0 ? (
+                          assignedUsers[newStatus].map(user => (
+                            <option key={user.id} value={user.id}>
+                              {user.fullName || user.email}
+                            </option>
+                          ))
+                        ) : (
+                          <option value="" disabled>No employees available</option>
+                        )}
+                      </select>
+                      <div className="text-xs text-gray-500 mt-1">
+                        Status: {newStatus} | Users: {assignedUsers[newStatus]?.length || 0}
+                      </div>
+                    </div>
+                  )}
                   <div>
                     <label className="block text-xs text-black mb-1">Attachment (Optional)</label>
                     <input
@@ -628,18 +823,68 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
                 <h3 className="font-semibold text-black">Assigned Team</h3>
                 <button className="text-black hover:text-black">✎</button>
               </div>
-              {['Design', 'Production', 'Machinists', 'Inspection'].map(team => (
-                <div key={team} className="flex items-center justify-between py-2">
-                  <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center">?</div>
-                    <div>
-                      <div className="text-black">Unassigned</div>
-                      <div className="text-xs text-black">{team}</div>
+              {[
+                { key: 'DESIGN', label: 'Design' },
+                { key: 'PRODUCTION', label: 'Production' },
+                { key: 'MACHINING', label: 'Machinists' },
+                { key: 'INSPECTION', label: 'Inspection' },
+              ].map(({ key, label }) => {
+                const users = assignedUsers[key] || [];
+                const assignedUser = orderAssignedUsers[key] || null;
+                
+                return (
+                  <div key={key} className="flex items-center justify-between py-2">
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center">
+                        {assignedUser ? (
+                          assignedUser.fullName
+                            ? assignedUser.fullName
+                                .split(' ')
+                                .map((n) => n[0])
+                                .join('')
+                                .toUpperCase()
+                            : assignedUser.email
+                                ? assignedUser.email
+                                    .split('@')
+                                    .map((n) => n[0])
+                                    .join('')
+                                    .toUpperCase()
+                                : 'U'
+                        ) : '?'}</div>
+                      <div>
+                        <div className="text-black">
+                          {assignedUser ? (assignedUser.fullName || 'Unknown User') : 'Unassigned'}
+                        </div>
+                        <div className="text-xs text-black">
+                          {label}
+                          {key === 'MACHINING' && assignedUser?.machineName && (
+                            <span className="ml-2 text-blue-600 font-medium">
+                              • {assignedUser.machineName}
+                            </span>
+                          )}
+                        </div>
+                        {key === 'MACHINING' && assignedUser?.machineStatus && (
+                          <div className="text-xs text-gray-500">
+                            Machine Status: {assignedUser.machineStatus}
+                          </div>
+                        )}
+                      </div>
                     </div>
+                    <select
+                      value={assignedUser?.id || ''}
+                      onChange={(e) => handleAssignUser(key, e.target.value)}
+                      className="text-sm border border-gray-300 rounded px-2 py-1"
+                    >
+                      <option value="">Select {label}</option>
+                      {users.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.fullName || user.email}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                  <button className="text-gray-400 hover:text-gray-600">✎</button>
-                </div>
-              ))}
+                );
+              })}
             </section>
 
             <section className="bg-white border border-gray-200 rounded-lg p-4">
@@ -666,6 +911,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
 
 export default function DashboardPage() {
   const [statusFilter, setStatusFilter] = useState('All');
+  // ... rest of the code remains the same ...
   const [departmentFilter, setDepartmentFilter] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);

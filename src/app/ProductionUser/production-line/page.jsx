@@ -27,6 +27,17 @@ export default function ProductionLinePage() {
   const [statusFilter, setStatusFilter] = useState('All');
   const router = useRouter();
 
+  // Current user state
+  const [currentUser, setCurrentUser] = useState(null);
+
+  // Machine employees state
+  const [machineEmployees, setMachineEmployees] = useState([]);
+  const [selectedEmployees, setSelectedEmployees] = useState(new Set());
+  const [showAssignAnotherModal, setShowAssignAnotherModal] = useState(false);
+  const [currentOrderId, setCurrentOrderId] = useState(null);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [activeTab, setActiveTab] = useState('machine');
+
   const [orders, setOrders] = useState([]);
   const [pdfMap, setPdfMap] = useState({});
   const [pdfModalUrl, setPdfModalUrl] = useState(null);
@@ -59,6 +70,13 @@ export default function ProductionLinePage() {
   const [toast, setToast] = useState({ message: '', type: '' });
   const [showSelectMachineModal, setShowSelectMachineModal] = useState(false);
   const [showAddMachineModal, setShowAddMachineModal] = useState(false);
+  const [showMachineEmployeeList, setShowMachineEmployeeList] = useState(false);
+  const [showSubnestMachineList, setShowSubnestMachineList] = useState(false);
+  const [showPartsMachineList, setShowPartsMachineList] = useState(false);
+  const [showMaterialMachineList, setShowMaterialMachineList] = useState(false);
+  const [showResultsMachineList, setShowResultsMachineList] = useState(false);
+  const [showPlateInfoMachineList, setShowPlateInfoMachineList] = useState(false);
+  const [showPartInfoMachineList, setShowPartInfoMachineList] = useState(false);
   const [machines, setMachines] = useState([]);
   const [machinesLoading, setMachinesLoading] = useState(false);
   const [selectedMachineId, setSelectedMachineId] = useState('');
@@ -358,36 +376,268 @@ export default function ProductionLinePage() {
     }
   };
 
-  useEffect(() => {
-    const fetchOrders = async () => {
-      try {
-        const orders = await orderApi.getAllOrders();
+  // Helper function to get current user
+  const getCurrentUser = () => {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+    if (!raw) return null;
+    try {
+      const auth = JSON.parse(raw);
+      return auth.user || auth;
+    } catch {
+      return null;
+    }
+  };
 
-        const sorted = Array.isArray(orders)
-          ? orders.slice().sort((a, b) => (b.orderId || 0) - (a.orderId || 0))
-          : [];
+  // Helper function to get machine name by ID
+  const getMachineName = async (machineId) => {
+    if (!machineId) return '';
+    
+    try {
+      const authData = JSON.parse(localStorage.getItem('swiftflow-user'));
+      const token = authData?.token;
+      
+      const response = await fetch(`http://localhost:8080/machine/getMachine/${machineId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (response.ok) {
+        const machine = await response.json();
+        return machine.machineName || `Machine ${machineId}`;
+      }
+    } catch (error) {
+      console.error('Error fetching machine name:', error);
+    }
+    
+    return `Machine ${machineId}`;
+  };
 
-        const transformed = sorted.map(order => {
-          const product = (order.products && order.products[0]) || {};
+  // Handle employee selection
+  const handleEmployeeSelection = (employeeId) => {
+    setSelectedEmployees(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(employeeId)) {
+        newSet.delete(employeeId);
+      } else {
+        newSet.add(employeeId);
+      }
+      return newSet;
+    });
+  };
 
-          return {
-            id: `SF${order.orderId}`,
-            product: product.productName || product.productCode || 'Unknown Product',
-            quantity: order.units || '',
-            status: order.status || 'Production',
-            startDate: order.dateAdded || '',
-            dueDate: '',
-            assignedTo: '',
-            department: order.department,
-          };
+  // Handle order assignment to selected employees
+  const handleAssignToEmployees = async (orderId) => {
+    if (selectedEmployees.size === 0) {
+      alert('Please select at least one employee');
+      return;
+    }
+
+    try {
+      const authData = JSON.parse(localStorage.getItem('swiftflow-user'));
+      const token = authData?.token;
+
+      // Convert Set to Array and sort for consistent distribution
+      const employeeIds = Array.from(selectedEmployees).sort();
+      const selectedRows = [...productionSelectedRowNos].sort((a, b) => a - b);
+      
+      // Distribute rows evenly among employees
+      const rowsPerEmployee = Math.ceil(selectedRows.length / employeeIds.length);
+      
+      for (let i = 0; i < employeeIds.length; i++) {
+        const employeeId = employeeIds[i];
+        // Get the rows for this employee
+        const startIndex = i * rowsPerEmployee;
+        const endIndex = Math.min(startIndex + rowsPerEmployee, selectedRows.length);
+        const employeeRows = selectedRows.slice(startIndex, endIndex);
+        
+        // First assign the employee to the order
+        const assignResponse = await fetch('http://localhost:8080/users/assign-to-order', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            orderId: orderId,
+            userId: employeeId,
+            department: 'MACHINING',
+          }),
         });
 
-        setOrders(transformed);
-      } catch (err) {
-        console.error('Error fetching orders for production line:', err);
-      }
-    };
+        if (!assignResponse.ok) {
+          const errorText = await assignResponse.text();
+          throw new Error(`Failed to assign employee ${employeeId}: ${errorText}`);
+        }
 
+        // Then save the three-checkbox selection for this employee with their specific rows
+        const payload = {
+          designerSelectedRowIds: [],
+          productionSelectedRowIds: employeeRows.map(String),
+          machineSelectedRowIds: employeeRows.map(String), // Also save in machine for future retrieval
+          inspectionSelectedRowIds: [],
+          machineId: null,
+          selectedItems: [],
+          assignedUserId: employeeId, // CRITICAL: Specify which employee this selection belongs to
+        };
+        
+        const saveResponse = await fetch(`http://localhost:8080/pdf/order/${orderId}/three-checkbox-selection`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (!saveResponse.ok) {
+          const errorText = await saveResponse.text();
+          console.warn(`Failed to save three-checkbox selection for employee ${employeeId}:`, errorText);
+        }
+      }
+
+      // Refresh the orders list to show updated assignments
+      await fetchOrders();
+      setSelectedEmployees(new Set());
+      setShowAssignAnotherModal(true);
+    } catch (error) {
+      console.error('Error assigning employees:', error);
+      alert('Failed to assign employees to order');
+    }
+  };
+
+  // Fetch orders for the current production user
+  const fetchOrders = async () => {
+    try {
+      // Get current user
+      const user = getCurrentUser();
+      if (!user) {
+        console.log('No current user found');
+        setOrders([]);
+        return;
+      }
+
+      const orders = await orderApi.getAllOrders();
+
+      const sorted = Array.isArray(orders)
+        ? orders.slice().sort((a, b) => (b.orderId || 0) - (a.orderId || 0))
+        : [];
+
+      // Filter orders for current employee (only production orders assigned to this employee)
+      const filteredOrders = sorted.filter(order => {
+        // Only show production orders
+        const isProductionOrder = (order.department || '').toUpperCase() === 'PRODUCTION' || 
+                                 (order.status || '').toUpperCase() === 'PRODUCTION';
+        
+        if (!isProductionOrder) return false;
+
+        // Check if this order is assigned to the current employee
+        // We'll need to check the OrderAssignment table via API
+        return true; // For now, we'll filter after getting assigned orders
+      });
+
+      // Get assigned orders for current user
+      const token = JSON.parse(localStorage.getItem('swiftflow-user'))?.token;
+      if (token) {
+        try {
+          console.log('🔍 [PRODUCTION] Fetching assigned orders for user:', user.id, user.email);
+          const assignedOrdersResponse = await fetch('http://localhost:8080/users/assigned-orders/' + user.id, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          
+          if (assignedOrdersResponse.ok) {
+            const assignedOrderIds = await assignedOrdersResponse.json();
+            console.log('🔍 [PRODUCTION] Assigned order IDs for user', user.id, ':', assignedOrderIds);
+            console.log('🔍 [PRODUCTION] Available filtered orders:', filteredOrders.map(o => ({ id: o.orderId, name: o.product })));
+            
+            // Filter to only show orders assigned to this user
+            const userOrders = filteredOrders.filter(order => {
+              const orderId = order.orderId || parseInt(String(order.id).replace('SF', ''));
+              const isAssigned = assignedOrderIds.includes(orderId);
+              console.log('🔍 [PRODUCTION] Order', orderId, 'assigned to user', user.id, ':', isAssigned);
+              return isAssigned;
+            });
+            
+            console.log('🔍 [PRODUCTION] Final user orders for', user.email, ':', userOrders.map(o => ({ id: o.orderId, name: o.product })));
+
+            const transformed = await Promise.all(userOrders.map(async (order) => {
+              const product = (order.products && order.products[0]) || {};
+
+              // Get machine name if user has machine assigned
+              let machineName = '';
+              if (user.machineId) {
+                machineName = await getMachineName(user.machineId);
+              }
+
+              return {
+                id: `SF${order.orderId}`,
+                product: product.productName || product.productCode || 'Unknown Product',
+                quantity: order.units || '',
+                status: order.status || 'Production',
+                startDate: order.dateAdded || '',
+                dueDate: '',
+                assignedTo: user.fullName || user.email || 'Unknown',
+                machine: machineName, // Add machine field
+                department: order.department,
+              };
+            }));
+
+            setOrders(transformed);
+          } else {
+            // If can't get assigned orders, show empty
+            setOrders([]);
+          }
+        } catch (error) {
+          console.error('Error fetching assigned orders:', error);
+          setOrders([]);
+        }
+      } else {
+        setOrders([]);
+      }
+    } catch (err) {
+      console.error('Error fetching orders for production line:', err);
+      setOrders([]);
+    }
+  };
+
+  // Fetch all machine employees with their machine details
+  const fetchMachineEmployees = async () => {
+    try {
+      const authData = JSON.parse(localStorage.getItem('swiftflow-user'));
+      const token = authData?.token;
+      
+      console.log('Fetching machine employees...');
+      
+      const response = await fetch('http://localhost:8080/users/with-machine-details', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      console.log('Response status:', response.status);
+      
+      if (response.ok) {
+        const users = await response.json();
+        console.log('All users from API:', users);
+        
+        // Filter only MACHINING department users who have machines assigned
+        const machiningUsers = users.filter(user => 
+          user.department === 'MACHINING' && user.machineName
+        );
+        
+        console.log('Filtered machining users:', machiningUsers);
+        console.log('Sample machining user:', machiningUsers[0]);
+        
+        setMachineEmployees(machiningUsers);
+      } else {
+        console.error('Failed to fetch users:', response.status);
+      }
+    } catch (error) {
+      console.error('Error fetching machine employees:', error);
+    }
+  };
+
+  useEffect(() => {
+    // Fetch machine employees on component mount
+    fetchMachineEmployees();
+    
+    // Fetch orders for the current user
     fetchOrders();
   }, []);
 
@@ -837,6 +1087,9 @@ export default function ProductionLinePage() {
                   Assigned To
                 </th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Machine
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   PDF
                 </th>
                 <th scope="col" className="relative px-6 py-3">
@@ -869,6 +1122,9 @@ export default function ProductionLinePage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {order.assignedTo}
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {order.machine || '-'}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       {pdfMap[order.id] ? (
                         <div className="flex items-center gap-2 text-xs">
@@ -895,14 +1151,6 @@ export default function ProductionLinePage() {
                         <span className="text-gray-400 text-xs">-</span>
                       )}
                     </td>
-                    {/* <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <button className="text-blue-600 hover:text-blue-900 mr-4">
-                        View
-                      </button>
-                      <button className="text-indigo-600 hover:text-indigo-900">
-                        Edit
-                      </button>
-                    </td> */}
                   </tr>
                 ))
               ) : (
@@ -1697,58 +1945,328 @@ export default function ProductionLinePage() {
                         <button
                           type="button"
                           onClick={async () => {
-                            await ensureMachinesLoaded();
-                            setShowSelectMachineModal(true);
+                            // Show machine employee list directly in the modal
+                            setShowResultsMachineList(!showResultsMachineList);
                           }}
                           className="flex-1 rounded-md bg-indigo-600 text-white text-xs py-2"
                         >
-                          Select Machine
+                          {showResultsMachineList ? 'Hide Machine List' : 'Select Machine'}
                         </button>
+                      )}
+                      
+                      {/* Machine Employee List - Show when Select Machine is clicked */}
+                      {showResultsMachineList && (
+                        <div className="mt-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
+                          <div className="text-sm font-medium text-gray-700 mb-2">
+                            Select Machine Employees
+                          </div>
+                          <div className="max-h-40 overflow-y-auto border rounded-lg bg-white">
+                            {machineEmployees.length > 0 ? (
+                              machineEmployees.map((employee) => (
+                                <label key={employee.id} className="flex items-center p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedEmployees.has(employee.id)}
+                                    onChange={() => handleEmployeeSelection(employee.id)}
+                                    className="h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
+                                  />
+                                  <div className="flex-1">
+                                    <div className="text-xs font-medium text-gray-900">{employee.fullName}</div>
+                                    <div className="text-xs text-gray-500">{employee.machineName}</div>
+                                  </div>
+                                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
+                                    employee.machineStatus === 'Active' 
+                                      ? 'bg-green-100 text-green-800' 
+                                      : 'bg-red-100 text-red-800'
+                                  }`}>
+                                    {employee.machineStatus || 'Unknown'}
+                                  </span>
+                                </label>
+                              ))
+                            ) : (
+                              <div className="p-3 text-center text-xs text-gray-500">
+                                No machine employees available
+                              </div>
+                            )}
+                          </div>
+                          
+                          {/* Action Buttons */}
+                          {selectedEmployees.size > 0 && (
+                            <div className="flex items-center justify-between pt-2 border-t border-gray-200 mt-2">
+                              <span className="text-xs text-gray-700">
+                                {selectedEmployees.size} employee(s) selected
+                              </span>
+                              <button
+                                onClick={() => {
+                                  // Get current order from PDF modal
+                                  const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
+                                  if (!current) return;
+                                  const [orderId] = current;
+                                  const numericId = String(orderId).replace('SF', '');
+                                  handleAssignToEmployees(numericId);
+                                }}
+                                className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs font-medium"
+                              >
+                                Assign Selected
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}
                   {pdfType === 'standard' && (
-                  <div className="p-3 border-t border-gray-200 flex items-center justify-end gap-3 text-xs">
+                  <div className="p-3 border-t border-gray-200 flex items-center justify-end gap-3 text-xs relative">
                     {activePdfTab === 'subnest' && (
-                      <button
-                        type="button"
-                        disabled={productionSelectedRowNos.length === 0}
-                        onClick={async () => {
-                          await ensureMachinesLoaded();
-                          setShowSelectMachineModal(true);
-                        }}
-                        className="rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white py-2 px-4"
-                      >
-                        Select Machine
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          disabled={productionSelectedRowNos.length === 0}
+                          onClick={async () => {
+                            // Show machine employee list directly in the modal
+                            setShowSubnestMachineList(!showSubnestMachineList);
+                          }}
+                          className="rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white py-2 px-4"
+                        >
+                          {showSubnestMachineList ? 'Hide Machine List' : 'Select Machine'}
+                        </button>
+                        
+                        {/* Machine Employee List - Show when Select Machine is clicked */}
+                        {showSubnestMachineList && (
+                          <div className="absolute bottom-full left-0 right-0 mb-2 p-3 border border-gray-200 rounded-lg bg-white shadow-lg z-10">
+                            <div className="text-sm font-medium text-gray-700 mb-2">
+                              Select Machine Employees
+                            </div>
+                            <div className="max-h-40 overflow-y-auto border rounded-lg bg-white">
+                              {machineEmployees.length > 0 ? (
+                                machineEmployees.map((employee) => (
+                                  <label key={employee.id} className="flex items-center p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedEmployees.has(employee.id)}
+                                      onChange={() => handleEmployeeSelection(employee.id)}
+                                      className="h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
+                                    />
+                                    <div className="flex-1">
+                                      <div className="text-xs font-medium text-gray-900">{employee.fullName}</div>
+                                      <div className="text-xs text-gray-500">{employee.machineName}</div>
+                                    </div>
+                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
+                                      employee.machineStatus === 'Active' 
+                                        ? 'bg-green-100 text-green-800' 
+                                        : 'bg-red-100 text-red-800'
+                                    }`}>
+                                      {employee.machineStatus || 'Unknown'}
+                                    </span>
+                                  </label>
+                                ))
+                              ) : (
+                                <div className="p-3 text-center text-xs text-gray-500">
+                                  No machine employees available
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Action Buttons */}
+                            {selectedEmployees.size > 0 && (
+                              <div className="flex items-center justify-between pt-2 border-t border-gray-200 mt-2">
+                                <span className="text-xs text-gray-700">
+                                  {selectedEmployees.size} employee(s) selected
+                                </span>
+                                <button
+                                  onClick={() => {
+                                    // Get current order from PDF modal
+                                    const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
+                                    if (!current) return;
+                                    const [orderId] = current;
+                                    const numericId = String(orderId).replace('SF', '');
+                                    handleAssignToEmployees(numericId);
+                                  }}
+                                  className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs font-medium"
+                                >
+                                  Assign Selected
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
                     )}
                     {activePdfTab === 'parts' && (
-                      <button
-                        type="button"
-                        disabled={userRole !== 'PRODUCTION' || productionPartsSelectedRowNos.length === 0}
-                        onClick={savePartsSelection}
-                        className="rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white py-2 px-4"
-                      >
-                        Save Parts Selection
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          disabled={userRole !== 'PRODUCTION' || productionPartsSelectedRowNos.length === 0}
+                          onClick={savePartsSelection}
+                          className="rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white py-2 px-4 mr-2"
+                        >
+                          Save Parts Selection
+                        </button>
+                        {productionPartsSelectedRowNos.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              // Show machine employee list directly in the modal
+                              setShowPartsMachineList(!showPartsMachineList);
+                            }}
+                            className="rounded-md bg-indigo-600 text-white py-2 px-4"
+                          >
+                            {showPartsMachineList ? 'Hide Machine List' : 'Select Machine'}
+                          </button>
+                        )}
+                        
+                        {/* Machine Employee List - Show when Select Machine is clicked */}
+                        {showPartsMachineList && (
+                          <div className="absolute bottom-full left-0 right-0 mb-2 p-3 border border-gray-200 rounded-lg bg-white shadow-lg z-10">
+                            <div className="text-sm font-medium text-gray-700 mb-2">
+                              Select Machine Employees
+                            </div>
+                            <div className="max-h-40 overflow-y-auto border rounded-lg bg-white">
+                              {machineEmployees.length > 0 ? (
+                                machineEmployees.map((employee) => (
+                                  <label key={employee.id} className="flex items-center p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedEmployees.has(employee.id)}
+                                      onChange={() => handleEmployeeSelection(employee.id)}
+                                      className="h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
+                                    />
+                                    <div className="flex-1">
+                                      <div className="text-xs font-medium text-gray-900">{employee.fullName}</div>
+                                      <div className="text-xs text-gray-500">{employee.machineName}</div>
+                                    </div>
+                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
+                                      employee.machineStatus === 'Active' 
+                                        ? 'bg-green-100 text-green-800' 
+                                        : 'bg-red-100 text-red-800'
+                                    }`}>
+                                      {employee.machineStatus || 'Unknown'}
+                                    </span>
+                                  </label>
+                                ))
+                              ) : (
+                                <div className="p-3 text-center text-xs text-gray-500">
+                                  No machine employees available
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Action Buttons */}
+                            {selectedEmployees.size > 0 && (
+                              <div className="flex items-center justify-between pt-2 border-t border-gray-200 mt-2">
+                                <span className="text-xs text-gray-700">
+                                  {selectedEmployees.size} employee(s) selected
+                                </span>
+                                <button
+                                  onClick={() => {
+                                    // Get current order from PDF modal
+                                    const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
+                                    if (!current) return;
+                                    const [orderId] = current;
+                                    const numericId = String(orderId).replace('SF', '');
+                                    handleAssignToEmployees(numericId);
+                                  }}
+                                  className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs font-medium"
+                                >
+                                  Assign Selected
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
                     )}
                     {activePdfTab === 'material' && (
-                      <button
-                        type="button"
-                        disabled={userRole !== 'PRODUCTION' || productionMaterialSelectedRowNos.length === 0}
-                        onClick={saveMaterialSelection}
-                        className="rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white py-2 px-4"
-                      >
-                        Save Material Selection
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          disabled={userRole !== 'PRODUCTION' || productionMaterialSelectedRowNos.length === 0}
+                          onClick={saveMaterialSelection}
+                          className="rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white py-2 px-4 mr-2"
+                        >
+                          Save Material Selection
+                        </button>
+                        {productionMaterialSelectedRowNos.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              // Show machine employee list directly in the modal
+                              setShowMaterialMachineList(!showMaterialMachineList);
+                            }}
+                            className="rounded-md bg-indigo-600 text-white py-2 px-4"
+                          >
+                            {showMaterialMachineList ? 'Hide Machine List' : 'Select Machine'}
+                          </button>
+                        )}
+                        
+                        {/* Machine Employee List - Show when Select Machine is clicked */}
+                        {showMaterialMachineList && (
+                          <div className="absolute bottom-full left-0 right-0 mb-2 p-3 border border-gray-200 rounded-lg bg-white shadow-lg z-10">
+                            <div className="text-sm font-medium text-gray-700 mb-2">
+                              Select Machine Employees
+                            </div>
+                            <div className="max-h-40 overflow-y-auto border rounded-lg bg-white">
+                              {machineEmployees.length > 0 ? (
+                                machineEmployees.map((employee) => (
+                                  <label key={employee.id} className="flex items-center p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedEmployees.has(employee.id)}
+                                      onChange={() => handleEmployeeSelection(employee.id)}
+                                      className="h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
+                                    />
+                                    <div className="flex-1">
+                                      <div className="text-xs font-medium text-gray-900">{employee.fullName}</div>
+                                      <div className="text-xs text-gray-500">{employee.machineName}</div>
+                                    </div>
+                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
+                                      employee.machineStatus === 'Active' 
+                                        ? 'bg-green-100 text-green-800' 
+                                        : 'bg-red-100 text-red-800'
+                                    }`}>
+                                      {employee.machineStatus || 'Unknown'}
+                                    </span>
+                                  </label>
+                                ))
+                              ) : (
+                                <div className="p-3 text-center text-xs text-gray-500">
+                                  No machine employees available
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Action Buttons */}
+                            {selectedEmployees.size > 0 && (
+                              <div className="flex items-center justify-between pt-2 border-t border-gray-200 mt-2">
+                                <span className="text-xs text-gray-700">
+                                  {selectedEmployees.size} employee(s) selected
+                                </span>
+                                <button
+                                  onClick={() => {
+                                    // Get current order from PDF modal
+                                    const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
+                                    if (!current) return;
+                                    const [orderId] = current;
+                                    const numericId = String(orderId).replace('SF', '');
+                                    handleAssignToEmployees(numericId);
+                                  }}
+                                  className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs font-medium"
+                                >
+                                  Assign Selected
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
-                  )}
-                </div>
+                )}
               </div>
             </div>
-          </div>
         </div>
+      </div>
+    </div>
       )}
 
       {/* Select Machine Modal */}
@@ -1972,6 +2490,76 @@ export default function ProductionLinePage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Another Machine Modal */}
+      {showAssignAnotherModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setShowAssignAnotherModal(false)}
+          />
+          <div className="relative bg-white rounded-lg w-full max-w-2xl shadow-lg">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">Assign Order to Another Machine</h3>
+              <button
+                onClick={() => setShowAssignAnotherModal(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-gray-600 mb-4">
+                Select additional machine employees to assign Order {currentOrderId}:
+              </p>
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {machineEmployees
+                  .filter(emp => !selectedEmployees.has(emp.id))
+                  .map((employee) => (
+                    <label key={employee.id} className="flex items-center p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedEmployees.has(employee.id)}
+                        onChange={() => handleEmployeeSelection(employee.id)}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-3"
+                      />
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900">{employee.fullName}</div>
+                        <div className="text-sm text-gray-500">{employee.machineName}</div>
+                      </div>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        employee.machineStatus === 'Active' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-red-100 text-red-800'
+                      }`}>
+                        {employee.machineStatus || 'Unknown'}
+                      </span>
+                    </label>
+                  ))}
+              </div>
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => setShowAssignAnotherModal(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (currentOrderId && selectedEmployees.size > 0) {
+                      handleAssignToEmployees(currentOrderId);
+                      setShowAssignAnotherModal(false);
+                    }
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                >
+                  Assign Selected ({selectedEmployees.size})
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

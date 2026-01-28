@@ -92,6 +92,10 @@ export default function DesignQueuePage() {
     if (!canEditRole(role)) return;
     if (role === 'MACHINING') {
       setMachineSelectedRowIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+      setMachineSelectedRowNos((prev) => {
+        const idNum = Number(id);
+        return prev.includes(idNum) ? prev.filter((n) => n !== idNum) : [...prev, idNum];
+      });
     }
   };
 
@@ -324,31 +328,64 @@ export default function DesignQueuePage() {
   useEffect(() => {
     const fetchOrders = async () => {
       try {
-        const orders = await orderApi.getAllOrders();
+        // Get current user info
+        const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+        if (!raw) return;
+        const auth = JSON.parse(raw);
+        const token = auth?.token;
+        if (!token) return;
 
-        const sorted = Array.isArray(orders)
-          ? orders.slice().sort((a, b) => (b.orderId || 0) - (a.orderId || 0))
+        // Try multiple ways to get user ID
+        let userId = null;
+        let userEmail = null;
+        
+        if (auth.user?.id) {
+          userId = auth.user.id;
+          userEmail = auth.user.email || auth.user.username;
+        } else if (auth.id) {
+          userId = auth.id;
+          userEmail = auth.email || auth.username;
+        }
+        
+        if (!userId) {
+          console.error('No user ID found in auth:', auth);
+          return;
+        }
+
+        console.log('🔍 [MECHANIST] Fetching assigned orders for user:', userId, userEmail);
+
+        // Fetch only orders assigned to this specific user
+        const response = await fetch(`http://localhost:8080/users/assigned-orders/${userId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (!response.ok) {
+          console.error('Failed to fetch assigned orders');
+          return;
+        }
+
+        const assignedOrders = await response.json();
+        console.log('Assigned orders for user:', assignedOrders);
+
+        const sorted = Array.isArray(assignedOrders)
+          ? assignedOrders.slice().sort((a, b) => (b.orderId || 0) - (a.orderId || 0))
           : [];
 
-        const transformed = sorted.map((order) => {
-          // Customer name from customers array (new backend shape) with fallback
-          const customerName = order.customers && order.customers.length > 0
-            ? (order.customers[0].companyName || order.customers[0].customerName || 'Unknown Customer')
-            : 'Unknown Customer';
-
-          // Product text from customProductDetails or first product entry
-          const productText = order.customProductDetails ||
-            (order.products && order.products.length > 0
-              ? `${order.products[0].productCode || ''} ${order.products[0].productName || ''}`.trim() || 'No Product'
-              : 'No Product');
+        const transformed = sorted.map((orderId) => {
+          console.log('🔍 [MECHANIST] Processing order ID from backend:', orderId);
+          
+          // The backend returns just the order ID, not the full order object
+          // We need to create a basic order structure with the ID
+          const customerName = 'Customer';
+          const productText = 'No Product'; // We'll need to fetch this later if needed
 
           return {
-            id: `SF${order.orderId}`,
+            id: `SF${orderId}`, // Use the orderId directly
             customer: customerName,
             products: productText,
-            date: order.dateAdded || '',
-            status: order.status || 'Machining',
-            department: order.department,
+            date: '',
+            status: 'Active',
+            department: 'MACHINING',
           };
         });
 
@@ -372,8 +409,15 @@ export default function DesignQueuePage() {
 
         const entries = await Promise.all(
           orders.map(async (order) => {
+            // Extract numeric ID from SF{orderId} format
             const numericId = String(order.id).replace(/^SF/i, '');
-            if (!numericId) return [order.id, null];
+            console.log('🔍 [MECHANIST] Processing order:', order.id, '→ numericId:', numericId);
+            
+            if (!numericId || numericId === 'undefined') {
+              console.log('🔍 [MECHANIST] Skipping order due to invalid ID:', order);
+              return [order.id, null];
+            }
+            
             try {
               const resp = await fetch(`http://localhost:8080/status/order/${numericId}`, {
                 headers: { Authorization: `Bearer ${token}` },
@@ -386,15 +430,8 @@ export default function DesignQueuePage() {
               const pdfEntries = Array.isArray(history) ? history.filter(h => h.attachmentUrl) : [];
               console.log(`Order ${numericId} PDF entries:`, pdfEntries);
               
-              // Find the most recent MACHINING status entry
-              const machiningEntry = Array.isArray(history)
-                ? history
-                    .filter((h) => h.newStatus === 'MACHINING')
-                    .sort((a, b) => b.id - a.id)[0]
-                : null;
-              
-              // If there's a MACHINING entry, find the most recent PDF URL from any status
-              const withPdf = machiningEntry && Array.isArray(history)
+              // Find the most recent PDF URL from any status (not just MACHINING)
+              const withPdf = Array.isArray(history)
                 ? history
                     .filter(
                       (h) =>
@@ -421,8 +458,14 @@ export default function DesignQueuePage() {
         // Also fetch machining selection to get assigned machine name
         const machEntries = await Promise.all(
           orders.map(async (order) => {
+            // Extract numeric ID from SF{orderId} format
             const numericId = String(order.id).replace(/^SF/i, '');
-            if (!numericId) return [order.id, null];
+            
+            if (!numericId || numericId === 'undefined') {
+              console.log('🔍 [MECHANIST] Skipping machining selection for order due to invalid ID:', order);
+              return [order.id, null];
+            }
+            
             try {
               const selResp = await fetch(`http://localhost:8080/pdf/order/${numericId}/machining-selection`, {
                 headers: { Authorization: `Bearer ${token}` },
@@ -498,6 +541,10 @@ export default function DesignQueuePage() {
     setDesignerSelectedRowNos([]);
     setProductionSelectedRowNos([]);
     setMachineSelectedRowNos([]);
+    setDesignerSelectedRowIds([]);
+    setProductionSelectedRowIds([]);
+    setMachineSelectedRowIds([]);
+    setInspectionSelectedRowIds([]);
 
     const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
     if (!raw) return;
@@ -514,9 +561,27 @@ export default function DesignQueuePage() {
       });
       if (response.ok) {
         const data = await response.json();
+        console.log(`Three-checkbox selection for order ${numericId}:`, data);
+        
+        const designerIds = (data.designerSelectedRowIds || []).map(String);
+        const productionIds = (data.productionSelectedRowIds || []).map(String);
+        const machineIds = (data.machineSelectedRowIds || []).map(String);
+        const inspectionIds = (data.inspectionSelectedRowIds || []).map(String);
+        
+        console.log(`Machine IDs for order ${numericId}:`, machineIds);
+        
+        // Set both state variables to ensure compatibility
         setDesignerSelectedRowNos((data.designerSelectedRowIds || []).map(Number));
         setProductionSelectedRowNos((data.productionSelectedRowIds || []).map(Number));
         setMachineSelectedRowNos((data.machineSelectedRowIds || []).map(Number));
+        
+        setDesignerSelectedRowIds(designerIds);
+        setProductionSelectedRowIds(productionIds);
+        setMachineSelectedRowIds(machineIds);
+        setInspectionSelectedRowIds(inspectionIds);
+        
+        console.log(`Set machineSelectedRowIds to:`, machineIds);
+        console.log(`Set machineSelectedRowNos to:`, (data.machineSelectedRowIds || []).map(Number));
       }
     } catch (error) {
       console.error('Error fetching three-checkbox selection:', error);

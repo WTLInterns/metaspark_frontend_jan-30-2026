@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as orderApi from "../orders/api";
 import PdfRowOverlayViewer from "@/components/PdfRowOverlayViewer";
+import { userService } from "./userService";
 
 /* ✅ DetailsPanel unchanged */
 function DetailsPanel({ order, onClose }) {
@@ -154,6 +155,10 @@ export default function DesignQueuePage() {
   const [productionSelectedRowIds, setProductionSelectedRowIds] = useState([]);
   const [machineSelectedRowIds, setMachineSelectedRowIds] = useState([]);
   const [inspectionSelectedRowIds, setInspectionSelectedRowIds] = useState([]);
+
+  // Employee assignment states
+  const [productionUsers, setProductionUsers] = useState([]);
+  const [selectedEmployee, setSelectedEmployee] = useState('');
 
   // ===========================
   // ✅ HELPERS
@@ -457,6 +462,20 @@ export default function DesignQueuePage() {
     else setPdfMap({});
   }, [orders]);
 
+  // Fetch production users for employee assignment
+  useEffect(() => {
+    const fetchProductionUsers = async () => {
+      try {
+        const users = await userService.getUsersByDepartment('PRODUCTION');
+        setProductionUsers(users);
+      } catch (error) {
+        console.error('Error fetching production users:', error);
+      }
+    };
+
+    fetchProductionUsers();
+  }, []);
+
   const filtered = useMemo(() => {
     return orders.filter((o) => {
       const matchesQuery = `${o.id} ${o.customer}`.toLowerCase().includes(query.toLowerCase());
@@ -705,7 +724,38 @@ export default function DesignQueuePage() {
         return;
       }
 
-      setToast({ message: "Saved & Sent to Production ✅", type: "success" });
+      // ✅ 3) Assign employee to order if selected
+      if (selectedEmployee) {
+        try {
+          const assignRes = await fetch('http://localhost:8080/users/assign-to-order', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              userId: selectedEmployee,
+              orderId: numericId,
+              department: 'PRODUCTION',
+            }),
+          });
+
+          if (assignRes.ok) {
+            const assignResult = await assignRes.json();
+            console.log('Employee assigned:', assignResult.message);
+            setToast({ message: "Saved & Sent to Production with Employee Assignment ✅", type: "success" });
+          } else {
+            console.error('Failed to assign employee');
+            setToast({ message: "Saved & Sent to Production ✅", type: "success" });
+          }
+        } catch (error) {
+          console.error('Error assigning employee:', error);
+          setToast({ message: "Saved & Sent to Production ✅", type: "success" });
+        }
+      } else {
+        setToast({ message: "Saved & Sent to Production ✅", type: "success" });
+      }
+
       setPdfModalUrl(null);
       resetPdfStates();
     } catch (e) {
@@ -1648,14 +1698,32 @@ export default function DesignQueuePage() {
                             )}
 
                             {activePdfTab === "subnest" && (
-                              <button
-                                type="button"
-                                disabled={selectedSubnestRowNos.length === 0}
-                                onClick={sendToProductionCommon}
-                                className="flex-1 rounded-md bg-indigo-600 disabled:bg-gray-300 text-white text-xs py-2"
-                              >
-                                Save & Send to Production
-                              </button>
+                              <>
+                                <div className="flex-1">
+                                  <label className="block text-xs text-gray-700 mb-1">Assign to Production Employee</label>
+                                  <select
+                                    value={selectedEmployee}
+                                    onChange={(e) => setSelectedEmployee(e.target.value)}
+                                    className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm"
+                                    disabled={selectedSubnestRowNos.length === 0}
+                                  >
+                                    <option value="">Select production employee...</option>
+                                    {productionUsers.map(user => (
+                                      <option key={user.id} value={user.id}>
+                                        {user.fullName || user.email}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <button
+                                  type="button"
+                                  disabled={selectedSubnestRowNos.length === 0 || !selectedEmployee}
+                                  onClick={sendToProductionCommon}
+                                  className="flex-1 rounded-md bg-indigo-600 disabled:bg-gray-300 text-white text-xs py-2"
+                                >
+                                  Save & Send to Production
+                                </button>
+                              </>
                             )}
                           </>
                         ) : (

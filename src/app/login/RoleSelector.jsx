@@ -1,6 +1,7 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ChevronDown, ChevronUp, User, UserCircle, UserCheck, UserCog, UserPlus, UserX } from 'lucide-react';
+import { userService } from './userService';
 
 // Generate initials from name
 const getInitials = (name) => {
@@ -17,59 +18,80 @@ const colors = [
   'bg-pink-500', 'bg-yellow-500', 'bg-indigo-500'
 ];
 
-const users = [
-  { 
-    id: 1, 
-    name: 'Admin User', 
-    role: 'admin', 
-    department: 'Admin',
-    icon: UserCog,
-    color: 'bg-blue-600'
-  },
-  { 
-    id: 2, 
-    name: 'Dana Scully', 
-    role: 'designer', 
-    department: 'Design',
-    icon: UserCheck,
-    color: 'bg-green-500'
-  },
-  { 
-    id: 3, 
-    name: 'Production Team', 
-    role: 'production', 
-    department: 'Production',
-    icon: User,
-    color: 'bg-yellow-500'
-  },
-  { 
-    id: 4, 
-    name: 'Tony Stark', 
-    role: 'machinist', 
-    department: 'Machining',
-    icon: UserCog,
-    color: 'bg-red-500'
-  },
-  { 
-    id: 5, 
-    name: 'Inspection Team', 
-    role: 'inspector', 
-    department: 'Inspection',
-    icon: UserCheck,
-    color: 'bg-purple-500'
-  },
-  { 
-    id: 6, 
-    name: 'Fox Mulder', 
-    role: 'designer', 
-    department: 'Design',
-    icon: User,
-    color: 'bg-indigo-500'
-  },
-];
+// Department icons mapping
+const getDepartmentIcon = (department) => {
+  switch (department?.toUpperCase()) {
+    case 'ADMIN':
+      return UserCog;
+    case 'DESIGN':
+      return UserCheck;
+    case 'PRODUCTION':
+      return User;
+    case 'MACHINING':
+      return UserCog;
+    case 'INSPECTION':
+      return UserCheck;
+    default:
+      return UserCircle;
+  }
+};
+
+// Department color mapping
+const getDepartmentColor = (department) => {
+  switch (department?.toUpperCase()) {
+    case 'ADMIN':
+      return 'bg-blue-600';
+    case 'DESIGN':
+      return 'bg-green-500';
+    case 'PRODUCTION':
+      return 'bg-yellow-500';
+    case 'MACHINING':
+      return 'bg-red-500';
+    case 'INSPECTION':
+      return 'bg-purple-500';
+    default:
+      return 'bg-gray-500';
+  }
+};
+
+// Icon mapping for predefined roles
+const getIconComponent = (iconName) => {
+  switch (iconName) {
+    case 'USER_COG':
+      return UserCog;
+    case 'USER_CHECK':
+      return UserCheck;
+    case 'USER':
+      return User;
+    case 'USER_PLUS':
+      return UserPlus;
+    case 'USER_X':
+      return UserX;
+    default:
+      return UserCircle;
+  }
+};
 
 export default function RoleSelector({ selectedUser, onSelect, disabled = false }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+  
+  const fetchUsers = async () => {
+    try {
+      setLoading(true);
+      const usersData = await userService.getLoginRoles(); // Use public endpoint
+      setUsers(usersData);
+    } catch (error) {
+      console.error('Error fetching login roles:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
   
   const toggleDropdown = () => !disabled && setIsOpen(!isOpen);
   const handleUserSelect = (user) => {
@@ -80,9 +102,23 @@ export default function RoleSelector({ selectedUser, onSelect, disabled = false 
   
   // Avatar component
   const UserAvatar = ({ user, size = 'h-6 w-6', className = '' }) => {
-    const Icon = user.icon || UserCircle;
+    // For predefined roles, use the icon from the user object
+    // For actual users, use department-based icon
+    let Icon;
+    let color;
+    
+    if (user.icon) {
+      // Predefined role
+      Icon = getIconComponent(user.icon);
+      color = getDepartmentColor(user.department);
+    } else {
+      // Actual user from database
+      Icon = getDepartmentIcon(user.department);
+      color = getDepartmentColor(user.department);
+    }
+    
     return (
-      <div className={`${size} rounded-full ${user.color} flex items-center justify-center text-white ${className}`}>
+      <div className={`${size} rounded-full ${color} flex items-center justify-center text-white ${className}`}>
         <Icon className="h-4 w-4" />
       </div>
     );
@@ -103,7 +139,7 @@ export default function RoleSelector({ selectedUser, onSelect, disabled = false 
             <>
               <UserAvatar user={selectedUser} />
               <span className="ml-3 block truncate">
-                {selectedUser.name} - {selectedUser.role}
+                {selectedUser.label || selectedUser.fullName || 'Unknown User'} - {selectedUser.department}
               </span>
             </>
           ) : (
@@ -121,45 +157,64 @@ export default function RoleSelector({ selectedUser, onSelect, disabled = false 
 
       {isOpen && (
         <div className="absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm">
-          {users.map((user) => {
-            const isSelected = selectedUser?.id === user.id;
-            return (
-              <div
-                key={user.id}
-                className={`cursor-pointer select-none relative py-2 pl-3 pr-9 ${
-                  isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'
-                }`}
-                onClick={() => {
-                  handleUserSelect(user);
-                  setIsOpen(false);
-                }}
-              >
-                <div className="flex items-center">
-                  <UserAvatar user={user} />
-                  <div className="ml-3">
-                    <div className="text-sm font-medium text-gray-900">{user.name}</div>
-                    <div className="text-xs text-gray-500">{user.role} • {user.department}</div>
+          {loading ? (
+            <div className="px-3 py-2 text-sm text-gray-500">
+              Loading users...
+            </div>
+          ) : users.length === 0 ? (
+            <div className="px-3 py-2 text-sm text-gray-500">
+              No users found
+            </div>
+          ) : (
+            users.map((user) => {
+              const isSelected = selectedUser?.id === user.id;
+              return (
+                <div
+                  key={user.id}
+                  className={`cursor-pointer select-none relative py-2 pl-3 pr-9 ${
+                    isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'
+                  }`}
+                  onClick={() => {
+                    handleUserSelect(user);
+                    setIsOpen(false);
+                  }}
+                >
+                  <div className="flex items-center">
+                    <UserAvatar user={user} />
+                    <div className="ml-3">
+                      <div className="text-sm font-medium text-gray-900">
+                        {user.label || user.fullName || 'Unknown User'}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {user.department} • {user.email}
+                      </div>
+                      {user.description && (
+                        <div className="text-xs text-gray-400 mt-1">
+                          {user.description}
+                        </div>
+                      )}
+                    </div>
                   </div>
+                  {isSelected && (
+                    <span className="absolute inset-y-0 right-0 flex items-center pr-4 text-blue-600">
+                      <svg
+                        className="h-5 w-5"
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    </span>
+                  )}
                 </div>
-                {isSelected && (
-                  <span className="absolute inset-y-0 right-0 flex items-center pr-4 text-blue-600">
-                    <svg
-                      className="h-5 w-5"
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </span>
-                )}
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       )}
     </div>

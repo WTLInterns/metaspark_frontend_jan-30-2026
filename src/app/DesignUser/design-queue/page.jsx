@@ -569,6 +569,60 @@ export default function DesignQueuePage() {
     const numericId = numericOrderId(currentPdfOrderId);
     if (!numericId) return;
 
+    const backendPdfType = pdfType === 'nesting' ? 'PDF2' : 'PDF1';
+
+    const inferNestingScope = (rowKey) => {
+      const k = String(rowKey || '');
+      if (k.startsWith('PLATE-')) return 'NESTING_PLATE_INFO';
+      if (k.startsWith('PART-')) return 'NESTING_PART_INFO';
+      if (k.startsWith('RESULT-') || k.startsWith('RESULTPART-')) return 'NESTING_RESULTS';
+      return 'NESTING_RESULTS';
+    };
+
+    const postBaseSelection = async (scope, rowKeys) => {
+      if (!Array.isArray(rowKeys) || rowKeys.length === 0) return true;
+      const res = await fetch(`http://localhost:8080/orders/${numericId}/designer-base-selections`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          pdfType: backendPdfType,
+          scope,
+          rowKeys: rowKeys.map(String),
+        }),
+      });
+      return res.ok;
+    };
+
+    // Persist immutable designer base selection for BOTH PDFs (standard + nesting)
+    try {
+      if (userRole === 'DESIGN') {
+        if (pdfType === 'standard') {
+          await postBaseSelection('SUBNEST', selectedSubnestRowNos.map(String));
+          await postBaseSelection('PARTS', designerPartsSelectedRowNos.map(String));
+          await postBaseSelection('MATERIAL', designerMaterialSelectedRowNos.map(String));
+        } else {
+          const groups = {
+            NESTING_RESULTS: [],
+            NESTING_PLATE_INFO: [],
+            NESTING_PART_INFO: [],
+          };
+          (designerSelectedRowIds || []).forEach((rk) => {
+            const scope = inferNestingScope(rk);
+            groups[scope].push(String(rk));
+          });
+
+          await postBaseSelection('NESTING_RESULTS', groups.NESTING_RESULTS);
+          await postBaseSelection('NESTING_PLATE_INFO', groups.NESTING_PLATE_INFO);
+          await postBaseSelection('NESTING_PART_INFO', groups.NESTING_PART_INFO);
+        }
+      }
+    } catch {
+      // keep legacy flow unaffected
+    }
+
     const payload = {
       designerSelectedRowIds: [],
       productionSelectedRowIds: [],
@@ -653,6 +707,23 @@ export default function DesignQueuePage() {
         if (!saveRes.ok) {
           setToast({ message: "Failed to save selection", type: "error" });
           return;
+        }
+
+        // Persist immutable designer base selection (PDF1 + SUBNEST)
+        try {
+          await fetch(`http://localhost:8080/orders/${numericId}/designer-base-selections`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              pdfType: 'PDF1',
+              scope: 'SUBNEST',
+              rowKeys: selectedSubnestRowNos.map(String),
+            }),
+          });
+        } catch {
         }
       } else {
         const anySelected =

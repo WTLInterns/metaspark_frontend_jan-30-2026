@@ -189,7 +189,14 @@ export default function DesignQueuePage() {
     if (!numericId) return;
 
     const payload = {};
-    if (userRole === 'MACHINING') payload.machineSelectedRowIds = machineSelectedRowIds;
+    if (userRole === 'MACHINING') {
+      payload.machineSelectedRowIds = machineSelectedRowIds;
+      // Explicitly tag this save with PDF2 + current nesting scope
+      payload.pdfType = 'PDF2';
+      if (activePdfTab === 'plate-info') payload.scope = 'NESTING_PLATE_INFO';
+      else if (activePdfTab === 'part-info') payload.scope = 'NESTING_PART_INFO';
+      else payload.scope = 'NESTING_RESULTS';
+    }
 
     try {
       setIsSaving(true);
@@ -327,73 +334,106 @@ export default function DesignQueuePage() {
 
   useEffect(() => {
     const fetchOrders = async () => {
-      try {
-        // Get current user info
-        const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
-        if (!raw) return;
-        const auth = JSON.parse(raw);
-        const token = auth?.token;
-        if (!token) return;
+    try {
+      // Get current user info
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+      if (!raw) return;
+      const auth = JSON.parse(raw);
+      const token = auth?.token;
+      if (!token) return;
 
-        // Try multiple ways to get user ID
-        let userId = null;
-        let userEmail = null;
-        
-        if (auth.user?.id) {
-          userId = auth.user.id;
-          userEmail = auth.user.email || auth.user.username;
-        } else if (auth.id) {
-          userId = auth.id;
-          userEmail = auth.email || auth.username;
-        }
-        
-        if (!userId) {
-          console.error('No user ID found in auth:', auth);
-          return;
-        }
+      // Try multiple ways to get user ID (only needed for fallback)
+      let userId = null;
+      let userEmail = null;
 
-        console.log('🔍 [MECHANIST] Fetching assigned orders for user:', userId, userEmail);
-
-        // Fetch only orders assigned to this specific user
-        const response = await fetch(`http://localhost:8080/users/assigned-orders/${userId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-
-        if (!response.ok) {
-          console.error('Failed to fetch assigned orders');
-          return;
-        }
-
-        const assignedOrders = await response.json();
-        console.log('Assigned orders for user:', assignedOrders);
-
-        const sorted = Array.isArray(assignedOrders)
-          ? assignedOrders.slice().sort((a, b) => (b.orderId || 0) - (a.orderId || 0))
-          : [];
-
-        const transformed = sorted.map((orderId) => {
-          console.log('🔍 [MECHANIST] Processing order ID from backend:', orderId);
-          
-          // The backend returns just the order ID, not the full order object
-          // We need to create a basic order structure with the ID
-          const customerName = 'Customer';
-          const productText = 'No Product'; // We'll need to fetch this later if needed
-
-          return {
-            id: `SF${orderId}`, // Use the orderId directly
-            customer: customerName,
-            products: productText,
-            date: '',
-            status: 'Active',
-            department: 'MACHINING',
-          };
-        });
-
-        setOrders(transformed);
-      } catch (err) {
-        console.error('Error fetching machining orders:', err);
+      if (auth.user?.id) {
+        userId = auth.user.id;
+        userEmail = auth.user.email || auth.user.username;
+      } else if (auth.id) {
+        userId = auth.id;
+        userEmail = auth.email || auth.username;
       }
-    };
+
+      // Preferred path: use assigned-orders-details for richer info
+      try {
+        console.log('🔍 [MECHANIST] Fetching assigned order details…');
+        const detailsRes = await fetch('http://localhost:8080/users/assigned-orders-details', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (detailsRes.ok) {
+          const details = await detailsRes.json();
+          const list = Array.isArray(details) ? details : [];
+
+          const transformed = list.map((order) => {
+            const productText =
+              order.customProductDetails ||
+              order.productDetails ||
+              'No Product';
+
+            return {
+              id: `SF${order.orderId}`,
+              customer: 'Customer', // Customer info not included in AssignedOrderResponse; keep generic
+              products: productText,
+              date: order.dateAdded || '',
+              status: order.status || 'Active',
+              department: (order.department || 'MACHINING'),
+            };
+          });
+
+          console.log(`✅ [MECHANIST] Loaded ${transformed.length} orders with customer/product info`);
+          setOrders(transformed);
+          return; // Do not fall back if details worked
+        }
+      } catch (err) {
+        console.error('⚠️ [MECHANIST] Failed to fetch assigned order details, falling back to IDs:', err);
+      }
+
+      // Fallback: legacy flow using /users/assigned-orders/{userId}
+      if (!userId) {
+        console.error('No user ID found in auth for fallback:', auth);
+        return;
+      }
+
+      console.log('🔍 [MECHANIST] Fetching assigned orders for user (fallback):', userId, userEmail);
+
+      const response = await fetch(`http://localhost:8080/users/assigned-orders/${userId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!response.ok) {
+        console.error('Failed to fetch assigned orders (fallback)');
+        return;
+      }
+
+      const assignedOrders = await response.json();
+      console.log('Assigned orders for user (fallback):', assignedOrders);
+
+      const sorted = Array.isArray(assignedOrders)
+        ? assignedOrders.slice().sort((a, b) => (b.orderId || 0) - (a.orderId || 0))
+        : [];
+
+      const transformed = sorted.map((orderId) => {
+        console.log('🔍 [MECHANIST] Processing order ID from backend (fallback):', orderId);
+
+        const customerName = 'Customer';
+        const productText = 'No Product';
+
+        return {
+          id: `SF${orderId}`,
+          customer: customerName,
+          products: productText,
+          date: '',
+          status: 'Active',
+          department: 'MACHINING',
+        };
+      });
+
+      setOrders(transformed);
+    } catch (err) {
+      console.error('Error fetching machining orders:', err);
+    }
+  };
 
     fetchOrders();
   }, []);
@@ -537,7 +577,9 @@ export default function DesignQueuePage() {
   };
 
   const fetchThreeCheckboxSelection = async (orderId) => {
-    // Always start from a clean slate; any ticks come only from backend response
+    // Mechanist must see:
+    // - Designer base selection (read-only)
+    // - Only MY assigned row keys (privacy, shown in Production column)
     setDesignerSelectedRowNos([]);
     setProductionSelectedRowNos([]);
     setMachineSelectedRowNos([]);
@@ -555,36 +597,55 @@ export default function DesignQueuePage() {
     const numericId = String(orderId).replace(/^SF/i, '');
     if (!numericId) return;
 
+    const backendPdfType = pdfType === 'nesting' ? 'PDF2' : 'PDF1';
+    const mapActiveTabToScope = () => {
+      if (pdfType === 'nesting') {
+        if (activePdfTab === 'plate-info') return 'NESTING_PLATE_INFO';
+        if (activePdfTab === 'part-info') return 'NESTING_PART_INFO';
+        return 'NESTING_RESULTS';
+      }
+      if (activePdfTab === 'parts') return 'PARTS';
+      if (activePdfTab === 'material') return 'MATERIAL';
+      return 'SUBNEST';
+    };
+
+    const scope = mapActiveTabToScope();
+
     try {
-      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        console.log(`Three-checkbox selection for order ${numericId}:`, data);
-        
-        const designerIds = (data.designerSelectedRowIds || []).map(String);
-        const productionIds = (data.productionSelectedRowIds || []).map(String);
-        const machineIds = (data.machineSelectedRowIds || []).map(String);
-        const inspectionIds = (data.inspectionSelectedRowIds || []).map(String);
-        
-        console.log(`Machine IDs for order ${numericId}:`, machineIds);
-        
-        // Set both state variables to ensure compatibility
-        setDesignerSelectedRowNos((data.designerSelectedRowIds || []).map(Number));
-        setProductionSelectedRowNos((data.productionSelectedRowIds || []).map(Number));
-        setMachineSelectedRowNos((data.machineSelectedRowIds || []).map(Number));
-        
-        setDesignerSelectedRowIds(designerIds);
-        setProductionSelectedRowIds(productionIds);
-        setMachineSelectedRowIds(machineIds);
-        setInspectionSelectedRowIds(inspectionIds);
-        
-        console.log(`Set machineSelectedRowIds to:`, machineIds);
-        console.log(`Set machineSelectedRowNos to:`, (data.machineSelectedRowIds || []).map(Number));
+      const response = await fetch(
+        `http://localhost:8080/orders/${numericId}/my-assignments?pdfType=${encodeURIComponent(backendPdfType)}&scope=${encodeURIComponent(scope)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!response.ok) return;
+      const data = await response.json();
+
+      const baseKeys = Array.isArray(data?.designerBaseRowKeys)
+        ? data.designerBaseRowKeys.map(String)
+        : [];
+      const myKeys = Array.isArray(data?.myAssignedRowKeys)
+        ? data.myAssignedRowKeys.map(String)
+        : [];
+
+      if (pdfType === 'nesting') {
+        // designerBaseRowKeys -> Designer column (read-only)
+        setDesignerSelectedRowIds(baseKeys);
+        // myAssignedRowKeys -> Production column (read-only)
+        setProductionSelectedRowIds(myKeys);
+      } else {
+        // Standard PDF (SUBNEST, PARTS, MATERIAL as row numbers)
+        setDesignerSelectedRowNos(
+          baseKeys
+            .map((x) => Number(x))
+            .filter((n) => !Number.isNaN(n))
+        );
+        setProductionSelectedRowNos(
+          myKeys
+            .map((x) => Number(x))
+            .filter((n) => !Number.isNaN(n))
+        );
       }
     } catch (error) {
-      console.error('Error fetching three-checkbox selection:', error);
+      console.error('Error fetching my assignments:', error);
     }
   };
 
@@ -773,41 +834,23 @@ export default function DesignQueuePage() {
         },
         body: JSON.stringify({
           machineSelectedRowIds: machineSelectedRowNos.map(String),
+          pdfType: 'PDF1',
+          scope:
+            activePdfTab === 'parts'
+              ? 'PARTS'
+              : activePdfTab === 'material'
+              ? 'MATERIAL'
+              : 'SUBNEST',
         }),
       });
 
       if (response.ok) {
-        // After saving machine checkboxes, move the order to INSPECTION
-        const statusPayload = {
-          newStatus: 'INSPECTION',
-          comment: 'Machine selection saved and sent to Inspection',
-          percentage: null,
-          attachmentUrl: pdfModalUrl,
-        };
-        const formData = new FormData();
-        formData.append(
-          'status',
-          new Blob([JSON.stringify(statusPayload)], { type: 'application/json' })
-        );
-
-        const statusRes = await fetch(`http://localhost:8080/status/create/${numericId}`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          body: formData,
-        });
-
-        if (!statusRes.ok) {
-          let msg = 'Failed to update order status to INSPECTION';
-          try {
-            const data = await statusRes.json();
-            if (data && data.message) msg = data.message;
-          } catch {}
-          console.error(msg);
-          return;
-        }
+        setToast({ message: 'Machine selection saved successfully', type: 'success' });
+      } else {
+        setToast({ message: 'Failed to save machine selection', type: 'error' });
       }
+    } catch {
+      setToast({ message: 'Error saving machine selection', type: 'error' });
     } finally {
       setIsSaving(false);
     }
@@ -1635,22 +1678,19 @@ export default function DesignQueuePage() {
                             const [orderId] = current;
                             const numericId = String(orderId).replace(/^SF/i, '');
                             if (!numericId) return;
-
-                            const selectedIds =
-                              pdfType === 'nesting' ? machineSelectedRowIds : machineSelectedRowNos.map(String);
-
                             try {
                               setIsSaving(true);
-                              const res = await fetch(`http://localhost:8080/pdf/order/${numericId}/inspection-selection`, {
-                                method: 'POST',
-                                headers: {
-                                  'Content-Type': 'application/json',
-                                  Authorization: `Bearer ${token}`,
-                                },
-                                body: JSON.stringify({
-                                  selectedRowIds: selectedIds,
-                                }),
-                              });
+                              const res = await fetch(
+                                `http://localhost:8080/pdf/order/${numericId}/machine-send-to-inspection`,
+                                {
+                                  method: 'POST',
+                                  headers: {
+                                    'Content-Type': 'application/json',
+                                    Authorization: `Bearer ${token}`,
+                                  },
+                                  body: JSON.stringify({}),
+                                }
+                              );
 
                               if (!res.ok) {
                                 let msg = 'Failed to send to Inspection';
@@ -1660,7 +1700,7 @@ export default function DesignQueuePage() {
                                 } catch {}
                                 setToast({ message: msg, type: 'error' });
                               } else {
-                                setToast({ message: 'Selection sent to Inspection successfully.', type: 'success' });
+                                setToast({ message: 'Sent to Inspection successfully', type: 'success' });
                                 setPdfModalUrl(null);
                                 setPdfRows([]);
                                 setPartsRows([]);
@@ -1670,6 +1710,8 @@ export default function DesignQueuePage() {
                                 setProductionSelectedRowNos([]);
                                 setMachineSelectedRowNos([]);
                                 resetNestingPdfStates();
+                                // Remove this order from the local list so it disappears from Machining Jobs
+                                setOrders((prev) => prev.filter((o) => o.id !== orderId));
                               }
                             } finally {
                               setIsSaving(false);

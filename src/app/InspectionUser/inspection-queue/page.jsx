@@ -151,10 +151,20 @@ export default function InspectionQueuePage() {
         const numericId = numericOrderId(orderId);
         if (!numericId) return;
 
+        // Nesting flow: always use PDF2 and map active tab to scope
+        const scope = (() => {
+            if (activePdfTab === 'plate-info') return 'NESTING_PLATE_INFO';
+            if (activePdfTab === 'part-info') return 'NESTING_PART_INFO';
+            return 'NESTING_RESULTS';
+        })();
+
         try {
-            const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const response = await fetch(
+                `http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection?pdfType=PDF2&scope=${encodeURIComponent(scope)}`,
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                }
+            );
             if (!response.ok) return;
             const data = await response.json();
 
@@ -177,7 +187,13 @@ export default function InspectionQueuePage() {
         if (!numericId) return;
 
         const payload = {};
-        if (userRole === 'INSPECTION') payload.inspectionSelectedRowIds = inspectionSelectedRowIds;
+        if (userRole === 'INSPECTION') {
+            payload.inspectionSelectedRowIds = inspectionSelectedRowIds;
+            payload.pdfType = 'PDF2';
+            if (activePdfTab === 'plate-info') payload.scope = 'NESTING_PLATE_INFO';
+            else if (activePdfTab === 'part-info') payload.scope = 'NESTING_PART_INFO';
+            else payload.scope = 'NESTING_RESULTS';
+        }
 
         try {
             setIsSaving(true);
@@ -562,16 +578,42 @@ export default function InspectionQueuePage() {
         const numericId = String(orderId).replace(/^SF/i, '');
         if (!numericId) return;
 
+        // Standard PDF three-checkbox: use PDF1 and map active tab to scope
+        const scope = (() => {
+            if (activePdfTab === 'parts') return 'PARTS';
+            if (activePdfTab === 'material') return 'MATERIAL';
+            return 'SUBNEST';
+        })();
+
         try {
-            const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const response = await fetch(
+                `http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection?pdfType=PDF1&scope=${encodeURIComponent(scope)}`,
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                }
+            );
             if (response.ok) {
                 const data = await response.json();
-                setDesignerSelectedRowNos((data.designerSelectedRowIds || []).map(Number));
-                setProductionSelectedRowNos((data.productionSelectedRowIds || []).map(Number));
-                setMachineSelectedRowNos((data.machineSelectedRowIds || []).map(Number));
-                setInspectionSelectedRowNos((data.inspectionSelectedRowIds || []).map(Number));
+                setDesignerSelectedRowNos(
+                    (data.designerSelectedRowIds || [])
+                        .map(Number)
+                        .filter((n) => !Number.isNaN(n))
+                );
+                setProductionSelectedRowNos(
+                    (data.productionSelectedRowIds || [])
+                        .map(Number)
+                        .filter((n) => !Number.isNaN(n))
+                );
+                setMachineSelectedRowNos(
+                    (data.machineSelectedRowIds || [])
+                        .map(Number)
+                        .filter((n) => !Number.isNaN(n))
+                );
+                setInspectionSelectedRowNos(
+                    (data.inspectionSelectedRowIds || [])
+                        .map(Number)
+                        .filter((n) => !Number.isNaN(n))
+                );
             }
         } catch (error) {
             console.error('Error fetching three-checkbox selection:', error);

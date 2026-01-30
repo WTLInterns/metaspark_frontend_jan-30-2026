@@ -33,10 +33,14 @@ export default function ProductionLinePage() {
   // Machine employees state
   const [machineEmployees, setMachineEmployees] = useState([]);
   const [selectedEmployees, setSelectedEmployees] = useState(new Set());
+  const [employeeRowMap, setEmployeeRowMap] = useState({});
   const [showAssignAnotherModal, setShowAssignAnotherModal] = useState(false);
   const [currentOrderId, setCurrentOrderId] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [activeTab, setActiveTab] = useState('machine');
+
+  const [assignedRowKeysSet, setAssignedRowKeysSet] = useState(new Set());
+  const [assignedRowToUserMap, setAssignedRowToUserMap] = useState({});
 
   const [orders, setOrders] = useState([]);
   const [pdfMap, setPdfMap] = useState({});
@@ -388,6 +392,145 @@ export default function ProductionLinePage() {
     }
   };
 
+  const fetchProductionAssignments = async (orderId, backendPdfType, scope) => {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+    if (!raw) return;
+    const auth = JSON.parse(raw);
+    const token = auth?.token;
+    if (!token) return;
+    if (!orderId || !backendPdfType || !scope) return;
+
+    try {
+      const res = await fetch(
+        `http://localhost:8080/orders/${orderId}/production-assignments?pdfType=${encodeURIComponent(backendPdfType)}&scope=${encodeURIComponent(scope)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+
+      const nextSet = new Set();
+      const nextMap = {};
+      const assignments = Array.isArray(data?.assignments) ? data.assignments : [];
+      assignments.forEach((a) => {
+        const uid = a?.userId;
+        const keys = Array.isArray(a?.rowKeys) ? a.rowKeys : [];
+        keys.forEach((rk) => {
+          const k = String(rk);
+          nextSet.add(k);
+          if (uid !== undefined && uid !== null) nextMap[k] = uid;
+        });
+      });
+
+      setAssignedRowKeysSet(nextSet);
+      setAssignedRowToUserMap(nextMap);
+    } catch {
+    }
+  };
+
+  // Final step: send order to Machine department for all employees who have at least one assigned row
+  const handleSendToMachine = async (orderId) => {
+    try {
+      setIsSendingToMachine(true);
+
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
+      if (!raw) {
+        setToast({ message: 'Missing auth token', type: 'error' });
+        return;
+      }
+      const auth = JSON.parse(raw);
+      const token = auth?.token;
+      if (!token) {
+        setToast({ message: 'Missing auth token', type: 'error' });
+        return;
+      }
+
+      const numericId = numericOrderId(orderId);
+      if (!numericId) {
+        setToast({ message: 'Invalid order ID', type: 'error' });
+        return;
+      }
+
+      const backendPdfType = pdfType === 'nesting' ? 'PDF2' : 'PDF1';
+      const scope = (() => {
+        if (pdfType === 'nesting') {
+          if (activePdfTab === 'plate-info') return 'NESTING_PLATE_INFO';
+          if (activePdfTab === 'part-info') return 'NESTING_PART_INFO';
+          return 'NESTING_RESULTS';
+        }
+        if (activePdfTab === 'parts') return 'PARTS';
+        if (activePdfTab === 'material') return 'MATERIAL';
+        return 'SUBNEST';
+      })();
+
+      // Fetch assignments to determine which employees have at least one row
+      const assignRes = await fetch(
+        `http://localhost:8080/orders/${numericId}/production-assignments?pdfType=${encodeURIComponent(backendPdfType)}&scope=${encodeURIComponent(scope)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!assignRes.ok) {
+        setToast({ message: 'Failed to load assignments for order', type: 'error' });
+        return;
+      }
+
+      const assignData = await assignRes.json();
+      const assignments = Array.isArray(assignData?.assignments) ? assignData.assignments : [];
+
+      // Collect unique employee IDs that actually have at least one rowKey
+      const employeeIdSet = new Set();
+      assignments.forEach((a) => {
+        const uid = a?.userId;
+        const keys = Array.isArray(a?.rowKeys) ? a.rowKeys : [];
+        if (uid != null && keys.length > 0) {
+          employeeIdSet.add(uid);
+        }
+      });
+
+      if (employeeIdSet.size === 0) {
+        setToast({ message: 'No assigned employees found for this order', type: 'error' });
+        return;
+      }
+
+      // Call /users/assign-to-order for each employee to ensure order-level visibility
+      for (const employeeId of employeeIdSet) {
+        const res = await fetch('http://localhost:8080/users/assign-to-order', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            orderId: Number(numericId),
+            userId: employeeId,
+            department: 'MACHINING',
+          }),
+        });
+
+        if (!res.ok) {
+          let msg = 'Failed to send order to machine';
+          try {
+            const errData = await res.json();
+            if (errData && errData.message) msg = errData.message;
+          } catch {
+          }
+          setToast({ message: msg, type: 'error' });
+          return;
+        }
+      }
+
+      setToast({ message: 'Order sent to machine successfully', type: 'success' });
+    } catch (error) {
+      console.error('Error sending order to machine:', error);
+      setToast({ message: error?.message || 'Failed to send order to machine', type: 'error' });
+    } finally {
+      setIsSendingToMachine(false);
+    }
+  };
+
   // Helper function to get machine name by ID
   const getMachineName = async (machineId) => {
     if (!machineId) return '';
@@ -427,20 +570,56 @@ export default function ProductionLinePage() {
   // Handle order assignment to selected employees
   const handleAssignToEmployees = async (orderId) => {
     if (selectedEmployees.size === 0) {
-      alert('Please select at least one employee');
+      setToast({ message: 'Please select at least one employee', type: 'error' });
       return;
     }
 
     try {
       const authData = JSON.parse(localStorage.getItem('swiftflow-user'));
       const token = authData?.token;
+      if (!token) {
+        setToast({ message: 'Missing auth token', type: 'error' });
+        return;
+      }
+
+      const backendPdfType = pdfType === 'nesting' ? 'PDF2' : 'PDF1';
+
+      const mapActiveTabToScope = () => {
+        if (pdfType === 'nesting') {
+          if (activePdfTab === 'plate-info') return 'NESTING_PLATE_INFO';
+          if (activePdfTab === 'part-info') return 'NESTING_PART_INFO';
+          return 'NESTING_RESULTS';
+        }
+        if (activePdfTab === 'parts') return 'PARTS';
+        if (activePdfTab === 'material') return 'MATERIAL';
+        return 'SUBNEST';
+      };
+
+      const scope = mapActiveTabToScope();
+
+      const selectedRowKeys = (() => {
+        if (pdfType === 'nesting') {
+          return Array.isArray(productionSelectedRowIds) ? productionSelectedRowIds.map(String) : [];
+        }
+        if (activePdfTab === 'parts') return (productionPartsSelectedRowNos || []).map(String);
+        if (activePdfTab === 'material') return (productionMaterialSelectedRowNos || []).map(String);
+        return (productionSelectedRowNos || []).map(String);
+      })();
+
+      if (!selectedRowKeys.length) {
+        setToast({ message: 'Please select at least one row to assign', type: 'error' });
+        return;
+      }
 
       // Convert Set to Array and sort for consistent distribution
       const employeeIds = Array.from(selectedEmployees).sort();
-      const selectedRows = [...productionSelectedRowNos].sort((a, b) => a - b);
+      const selectedRows = [...selectedRowKeys].sort();
       
       // Distribute rows evenly among employees
       const rowsPerEmployee = Math.ceil(selectedRows.length / employeeIds.length);
+
+      const nextEmployeeRowMap = {};
+      const assignmentsPayload = [];
       
       for (let i = 0; i < employeeIds.length; i++) {
         const employeeId = employeeIds[i];
@@ -448,59 +627,55 @@ export default function ProductionLinePage() {
         const startIndex = i * rowsPerEmployee;
         const endIndex = Math.min(startIndex + rowsPerEmployee, selectedRows.length);
         const employeeRows = selectedRows.slice(startIndex, endIndex);
+
+        nextEmployeeRowMap[employeeId] = employeeRows;
+        assignmentsPayload.push({ userId: employeeId, rowKeys: employeeRows });
         
-        // First assign the employee to the order
-        const assignResponse = await fetch('http://localhost:8080/users/assign-to-order', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            orderId: orderId,
-            userId: employeeId,
-            department: 'MACHINING',
-          }),
-        });
-
-        if (!assignResponse.ok) {
-          const errorText = await assignResponse.text();
-          throw new Error(`Failed to assign employee ${employeeId}: ${errorText}`);
-        }
-
-        // Then save the three-checkbox selection for this employee with their specific rows
-        const payload = {
-          designerSelectedRowIds: [],
-          productionSelectedRowIds: employeeRows.map(String),
-          machineSelectedRowIds: employeeRows.map(String), // Also save in machine for future retrieval
-          inspectionSelectedRowIds: [],
-          machineId: null,
-          selectedItems: [],
-          assignedUserId: employeeId, // CRITICAL: Specify which employee this selection belongs to
-        };
-        
-        const saveResponse = await fetch(`http://localhost:8080/pdf/order/${orderId}/three-checkbox-selection`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify(payload),
-        });
-
-        if (!saveResponse.ok) {
-          const errorText = await saveResponse.text();
-          console.warn(`Failed to save three-checkbox selection for employee ${employeeId}:`, errorText);
-        }
       }
 
-      // Refresh the orders list to show updated assignments
-      await fetchOrders();
-      setSelectedEmployees(new Set());
-      setShowAssignAnotherModal(true);
+      // Persist employee-wise assignments (single bulk request)
+      setEmployeeRowMap(nextEmployeeRowMap);
+      const bulkRes = await fetch(`http://localhost:8080/orders/${orderId}/production-assignments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          pdfType: backendPdfType,
+          scope,
+          assignments: assignmentsPayload,
+        }),
+      });
+
+      if (!bulkRes.ok) {
+        let msg = 'Failed to assign rows';
+        try {
+          const data = await bulkRes.json();
+          if (data?.message) msg = data.message;
+        } catch {
+        }
+        throw new Error(msg);
+      }
+
+      setToast({ message: 'Rows assigned successfully', type: 'success' });
+
+      // Refresh assigned rows for green-highlight UI (no full order list refresh)
+      await fetchProductionAssignments(orderId, backendPdfType, scope);
+
+      // Clear only the current selection to allow multiple assignment rounds without closing modal
+      if (pdfType === 'nesting') {
+        setProductionSelectedRowIds([]);
+      } else if (activePdfTab === 'parts') {
+        setProductionPartsSelectedRowNos([]);
+      } else if (activePdfTab === 'material') {
+        setProductionMaterialSelectedRowNos([]);
+      } else {
+        setProductionSelectedRowNos([]);
+      }
     } catch (error) {
       console.error('Error assigning employees:', error);
-      alert('Failed to assign employees to order');
+      setToast({ message: error?.message || 'Failed to assign rows', type: 'error' });
     }
   };
 
@@ -634,10 +809,7 @@ export default function ProductionLinePage() {
   };
 
   useEffect(() => {
-    // Fetch machine employees on component mount
     fetchMachineEmployees();
-    
-    // Fetch orders for the current user
     fetchOrders();
   }, []);
 
@@ -651,7 +823,7 @@ export default function ProductionLinePage() {
         if (!token) return;
 
         const entries = await Promise.all(
-          orders.map(async (order) => {
+          (orders || []).map(async (order) => {
             const numericId = String(order.id).replace(/^SF/i, '');
             if (!numericId) return [order.id, null];
             try {
@@ -687,12 +859,36 @@ export default function ProductionLinePage() {
       }
     };
 
-    if (orders.length > 0) {
-      fetchPdfInfo();
-    } else {
-      setPdfMap({});
-    }
+    if ((orders || []).length > 0) fetchPdfInfo();
+    else setPdfMap({});
   }, [orders]);
+
+  useEffect(() => {
+    const run = async () => {
+      if (!pdfModalUrl) return;
+      const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
+      if (!current) return;
+      const [orderId] = current;
+      const numericId = String(orderId).replace(/^SF/i, '');
+      if (!numericId) return;
+
+      const backendPdfType = pdfType === 'nesting' ? 'PDF2' : 'PDF1';
+      const scope = (() => {
+        if (pdfType === 'nesting') {
+          if (activePdfTab === 'plate-info') return 'NESTING_PLATE_INFO';
+          if (activePdfTab === 'part-info') return 'NESTING_PART_INFO';
+          return 'NESTING_RESULTS';
+        }
+        if (activePdfTab === 'parts') return 'PARTS';
+        if (activePdfTab === 'material') return 'MATERIAL';
+        return 'SUBNEST';
+      })();
+
+      await fetchProductionAssignments(numericId, backendPdfType, scope);
+    };
+
+    run();
+  }, [pdfModalUrl, pdfType, activePdfTab, pdfMap]);
 
   const ensureMachinesLoaded = async () => {
     if (machines.length > 0 || machinesLoading) return;
@@ -1244,49 +1440,6 @@ export default function ProductionLinePage() {
                 </div>
                 <div className="w-1/2 flex flex-col">
                   <div className="border-b border-gray-200 flex items-center justify-between px-3 py-2 text-xs">
-                    <div className="p-3 border-t border-gray-200 flex items-center justify-between gap-3">
-                      {/* <button
-                        type="button"
-                        className="text-xs text-gray-600 hover:text-gray-800 flex items-center gap-1"
-                        onClick={() => setPdfModalUrl(null)}
-                      >
-                        Close
-                      </button> */}
-                      {/* <button
-                        type="button"
-                        disabled={isSendingToMachine || productionSelectedRowNos.length === 0}
-                        onClick={async () => {
-                          const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
-                          if (!current) return;
-                          const [orderId] = current;
-                          const numericId = String(orderId).replace(/^SF/i, '');
-                          if (!numericId) return;
-
-                          const raw = typeof window !== 'undefined' ? localStorage.getItem('swiftflow-user') : null;
-                          if (!raw) return;
-                          const auth = JSON.parse(raw);
-                          const token = auth?.token;
-                          if (!token) return;
-
-                          try {
-                            setIsSendingToMachine(true);
-                            await fetch(`http://localhost:8080/pdf/order/${numericId}/machining-selection`, {
-                              method: 'POST',
-                              headers: {
-                                'Content-Type': 'application/json',
-                                Authorization: `Bearer ${token}`,
-                              },
-                              body: JSON.stringify({ selectedRowIds: productionSelectedRowNos.map(String) }),
-                            });
-                          } finally {
-                            setIsSendingToMachine(false);
-                          }
-                        }}
-                        className="rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white text-xs py-2 px-4"
-                      >
-                        {isSendingToMachine ? 'Sending to Machine…' : 'Send to Machine'}
-                      </button> */}
-                    </div>
                     <div className="flex gap-2">
                       {pdfType === 'standard' ? (
                         <>
@@ -1422,10 +1575,12 @@ export default function ProductionLinePage() {
                                     const id = getNestingResultId(block);
                                     const active = Number(block?.resultNo) === Number(activeResultNo);
 
+                                    const isAssigned = assignedRowKeysSet.has(String(id));
+
                                     return (
                                       <tr
                                         key={id}
-                                        className={active ? 'bg-indigo-50' : ''}
+                                        className={`${active ? 'bg-indigo-50' : ''} ${isAssigned ? 'bg-green-100' : ''}`}
                                         onClick={() => setActiveResultNo(block?.resultNo)}
                                       >
                                         <td className="px-2 py-1 font-semibold">{block.resultNo}</td>
@@ -1446,9 +1601,12 @@ export default function ProductionLinePage() {
                                             <input
                                               type="checkbox"
                                               checked={isCheckedByRole(role, id)}
-                                              disabled={!canEditRole(role)}
+                                              disabled={!canEditRole(role) || (role === 'PRODUCTION' && isAssigned)}
                                               onChange={() => toggleRoleRow(role, id)}
                                             />
+                                            {role === 'PRODUCTION' && isAssigned && (
+                                              <div className="text-[10px] font-medium text-green-700 mt-1">Assigned</div>
+                                            )}
                                           </td>
                                         ))}
                                       </tr>
@@ -1499,9 +1657,10 @@ export default function ProductionLinePage() {
                                 <tbody className="divide-y divide-gray-100 text-gray-900">
                                   {(activeResultBlock?.parts || []).map((p, idx) => {
                                     const rowId = getNestingResultPartId(activeResultNo, p, idx);
+                                    const isAssigned = assignedRowKeysSet.has(String(rowId));
 
                                     return (
-                                      <tr key={rowId}>
+                                      <tr key={rowId} className={isAssigned ? 'bg-green-100' : ''}>
                                         <td className="px-2 py-1">
                                           <ThumbnailBox />
                                         </td>
@@ -1518,9 +1677,12 @@ export default function ProductionLinePage() {
                                             <input
                                               type="checkbox"
                                               checked={isCheckedByRole(role, rowId)}
-                                              disabled={!canEditRole(role)}
+                                              disabled={!canEditRole(role) || (role === 'PRODUCTION' && isAssigned)}
                                               onChange={() => toggleRoleRow(role, rowId)}
                                             />
+                                            {role === 'PRODUCTION' && isAssigned && (
+                                              <div className="text-[10px] font-medium text-green-700 mt-1">Assigned</div>
+                                            )}
                                           </td>
                                         ))}
                                       </tr>
@@ -1578,8 +1740,9 @@ export default function ProductionLinePage() {
                             <tbody className="text-gray-900 divide-y divide-gray-100">
                               {plateInfoRows.map((row, idx) => {
                                 const id = getNestingPlateId(row);
+                                const isAssigned = assignedRowKeysSet.has(String(id));
                                 return (
-                                  <tr key={id + idx}>
+                                  <tr key={id + idx} className={isAssigned ? 'bg-green-100' : ''}>
                                     <td className="px-2 py-1 font-medium">{row.order}</td>
                                     {/* <td className="px-2 py-1">{row.partName}</td> */}
                                     <td className="px-2 py-1">
@@ -1597,9 +1760,12 @@ export default function ProductionLinePage() {
                                         <input
                                           type="checkbox"
                                           checked={isCheckedByRole(role, id)}
-                                          disabled={!canEditRole(role)}
+                                          disabled={!canEditRole(role) || (role === 'PRODUCTION' && isAssigned)}
                                           onChange={() => toggleRoleRow(role, id)}
                                         />
+                                        {role === 'PRODUCTION' && isAssigned && (
+                                          <div className="text-[10px] font-medium text-green-700 mt-1">Assigned</div>
+                                        )}
                                       </td>
                                     ))}
                                   </tr>
@@ -1646,8 +1812,9 @@ export default function ProductionLinePage() {
                             <tbody className="text-gray-900 divide-y divide-gray-100">
                               {partInfoRows.map((row, idx) => {
                                 const id = getNestingPartId(row, idx);
+                                const isAssigned = assignedRowKeysSet.has(String(id));
                                 return (
-                                  <tr key={id}>
+                                  <tr key={id} className={isAssigned ? 'bg-green-100' : ''}>
                                     <td className="px-2 py-1 font-medium">{row.order}</td>
                                     <td className="px-2 py-1">{row.partName}</td>
                                     <td className="px-2 py-1">
@@ -1664,9 +1831,12 @@ export default function ProductionLinePage() {
                                         <input
                                           type="checkbox"
                                           checked={isCheckedByRole(role, id)}
-                                          disabled={!canEditRole(role)}
+                                          disabled={!canEditRole(role) || (role === 'PRODUCTION' && isAssigned)}
                                           onChange={() => toggleRoleRow(role, id)}
                                         />
+                                        {role === 'PRODUCTION' && isAssigned && (
+                                          <div className="text-[10px] font-medium text-green-700 mt-1">Assigned</div>
+                                        )}
                                       </td>
                                     ))}
                                   </tr>
@@ -1728,8 +1898,11 @@ export default function ProductionLinePage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {pdfRows.map((row) => (
-                            <tr key={row.rowNo}>
+                          {pdfRows.map((row) => {
+                            const rowKey = String(row.rowNo);
+                            const isAssigned = assignedRowKeysSet.has(rowKey);
+                            return (
+                            <tr key={row.rowNo} className={isAssigned ? 'bg-green-100' : ''}>
                               <td className="px-2 py-1">{row.rowNo}</td>
                               <td className="px-2 py-1">{row.sizeX}</td>
                               <td className="px-2 py-1">{row.sizeY}</td>
@@ -1754,9 +1927,12 @@ export default function ProductionLinePage() {
                                   type="checkbox"
                                   checked={productionSelectedRowNos.includes(row.rowNo)}
                                   onChange={(e) => handleProductionCheckboxChange(row.rowNo, e.target.checked)}
-                                  disabled={userRole !== 'PRODUCTION'}
+                                  disabled={userRole !== 'PRODUCTION' || isAssigned}
                                   className={userRole === 'PRODUCTION' ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}
                                 />
+                                {isAssigned && (
+                                  <div className="text-[10px] font-medium text-green-700 mt-1">Assigned</div>
+                                )}
                               </td>
                               <td className="px-2 py-1 text-center">
                                 <input
@@ -1767,7 +1943,8 @@ export default function ProductionLinePage() {
                                 />
                               </td>
                             </tr>
-                          ))}
+                          );
+                          })}
                         </tbody>
                       </table>
                     )}
@@ -1812,8 +1989,11 @@ export default function ProductionLinePage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {partsRows.map((row, idx) => (
-                            <tr key={getPartsSelectionId(row, idx)}>
+                          {partsRows.map((row, idx) => {
+                            const rowKey = String(getPartsSelectionId(row, idx));
+                            const isAssigned = assignedRowKeysSet.has(rowKey);
+                            return (
+                            <tr key={getPartsSelectionId(row, idx)} className={isAssigned ? 'bg-green-100' : ''}>
                               <td className="px-2 py-1">{idx + 1}</td>
                               <td className="px-2 py-1">{row.partName}</td>
                               <td className="px-2 py-1">{row.material}</td>
@@ -1833,9 +2013,12 @@ export default function ProductionLinePage() {
                                   onChange={(e) =>
                                     handleProductionPartsCheckboxChange(getPartsSelectionId(row, idx), e.target.checked)
                                   }
-                                  disabled={userRole !== 'PRODUCTION'}
+                                  disabled={userRole !== 'PRODUCTION' || isAssigned}
                                   className={userRole === 'PRODUCTION' ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}
                                 />
+                                {isAssigned && (
+                                  <div className="text-[10px] font-medium text-green-700 mt-1">Assigned</div>
+                                )}
                               </td>
                               <td className="px-2 py-1 text-center">
                                 <input
@@ -1846,7 +2029,8 @@ export default function ProductionLinePage() {
                                 />
                               </td>
                             </tr>
-                          ))}
+                          );
+                          })}
                         </tbody>
                       </table>
                     )}
@@ -1892,8 +2076,11 @@ export default function ProductionLinePage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {materialRows.map((row, idx) => (
-                            <tr key={`${row?.id ?? 'mat'}-${row?.material ?? ''}-${row?.thickness ?? ''}-${row?.sizeX ?? ''}-${row?.sizeY ?? ''}-${idx}`}>
+                          {materialRows.map((row, idx) => {
+                            const rowKey = String(idx);
+                            const isAssigned = assignedRowKeysSet.has(rowKey);
+                            return (
+                            <tr key={`${row?.id ?? 'mat'}-${row?.material ?? ''}-${row?.thickness ?? ''}-${row?.sizeX ?? ''}-${row?.sizeY ?? ''}-${idx}`} className={isAssigned ? 'bg-green-100' : ''}>
                               <td className="px-2 py-1">{row.material}</td>
                               <td className="px-2 py-1">{row.thickness}</td>
                               <td className="px-2 py-1">{row.sizeX}</td>
@@ -1912,9 +2099,12 @@ export default function ProductionLinePage() {
                                   type="checkbox"
                                   checked={productionMaterialSelectedRowNos.includes(idx)}
                                   onChange={(e) => handleProductionMaterialCheckboxChange(idx, e.target.checked)}
-                                  disabled={userRole !== 'PRODUCTION'}
+                                  disabled={userRole !== 'PRODUCTION' || isAssigned}
                                   className={userRole === 'PRODUCTION' ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}
                                 />
+                                {isAssigned && (
+                                  <div className="text-[10px] font-medium text-green-700 mt-1">Assigned</div>
+                                )}
                               </td>
                               <td className="px-2 py-1 text-center">
                                 <input
@@ -1925,7 +2115,8 @@ export default function ProductionLinePage() {
                                 />
                               </td>
                             </tr>
-                          ))}
+                          );
+                          })}
                         </tbody>
                       </table>
                     )}
@@ -2019,6 +2210,19 @@ export default function ProductionLinePage() {
                   <div className="p-3 border-t border-gray-200 flex items-center justify-end gap-3 text-xs relative">
                     {activePdfTab === 'subnest' && (
                       <>
+                        <button
+                          type="button"
+                          disabled={isSendingToMachine || assignedRowKeysSet.size === 0}
+                          onClick={() => {
+                            const current = Object.entries(pdfMap).find(([, url]) => url === pdfModalUrl);
+                            if (!current) return;
+                            const [orderId] = current;
+                            handleSendToMachine(orderId);
+                          }}
+                          className="rounded-md bg-indigo-600 disabled:bg-gray-300 disabled:text-gray-600 text-white py-2 px-4"
+                        >
+                          {isSendingToMachine ? 'Sending to Machine…' : 'Send to Machine'}
+                        </button>
                         <button
                           type="button"
                           disabled={productionSelectedRowNos.length === 0}

@@ -1,2 +1,2 @@
 'use client';
-export { default } from './production-dashboard';
+export { default } from '@/app/DesignUser/dashboard/page';

@@ -27,6 +27,7 @@ const adminMenuItems = [
   { name: 'All Orders', href: '/AdminUser/orders', icon: FiClipboard },
   { name: 'Customers', href: '/AdminUser/customers', icon: FiUsers },
   { name: 'Products', href: '/AdminUser/products', icon: FiPackage },
+  { name: 'Inventory', href: '/AdminUser/inventory', icon: FiPackage },
   { name: 'Machines', href: '/AdminUser/machines', icon: FiSettings },
   { name: 'HRM', href: '/AdminUser/hrm', icon: FiUserPlus },
   { 
@@ -50,25 +51,28 @@ const designerMenuItems = [
   { name: 'Dashboard', href: '/DesignUser/dashboard', icon: FiHome },
   { name: 'Communications', href: '/DesignUser/communications', icon: FiInbox },
   { name: 'Design Queue', href: '/DesignUser/design-queue', icon: FiFileText },
+  { name: 'Inventory', href: '/DesignUser/inventory', icon: FiPackage },
 ];
 
 const mechanistMenuItems = [
   { name: 'Dashboard', href: '/MechanistUser/dashboard', icon: FiHome },
   { name: 'Communications', href: '/MechanistUser/communications', icon: FiInbox },
   { name: 'Machining Jobs', href: '/MechanistUser/machining-jobs', icon: FiSettings },
+  { name: 'Inventory', href: '/MechanistUser/inventory', icon: FiPackage },
 ];
 
 const inspectorMenuItems = [
   { name: 'Dashboard', href: '/InspectionUser/dashboard', icon: FiHome },
   { name: 'Communications', href: '/InspectionUser/communications', icon: FiInbox },
   { name: 'Inspection Queue', href: '/InspectionUser/inspection-queue', icon: FiCheckCircle },
+  { name: 'Inventory', href: '/InspectionUser/inventory', icon: FiPackage },
 ];
 const productionMenuItems = [
   { name: 'Dashboard', href: '/ProductionUser/dashboard', icon: FiHome },
   { name: 'Communications', href: '/ProductionUser/communications', icon: FiInbox },
   { name: 'Production Line', href: '/ProductionUser/production-line', icon: FiCheckCircle },
+  { name: 'Inventory', href: '/ProductionUser/inventory', icon: FiPackage },
 ];
-
 
 // Helper function to get menu items based on user role and current path
 const getMenuItems = (user) => {

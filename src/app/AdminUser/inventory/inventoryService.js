@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.metaspark.co.in';
 
 const getAuthToken = () => {
   return typeof window !== 'undefined' ? localStorage.getItem('swiftflow-token') : null;

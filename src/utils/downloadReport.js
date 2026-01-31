@@ -2,7 +2,7 @@ import { createHeaders } from '@/utils/api';
 
 export const downloadReport = async ({ orderDisplayId, type }) => {
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.metaspark.co.in';
 
     if (!orderDisplayId || (typeof orderDisplayId !== 'string' && typeof orderDisplayId !== 'number')) {
       console.error('Invalid orderDisplayId for report download:', orderDisplayId);

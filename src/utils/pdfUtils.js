@@ -17,7 +17,7 @@ export const analyzePdfType = async (attachmentUrl) => {
   if (!token) return 'standard';
 
   try {
-    const response = await fetch(`http://localhost:8080/api/pdf/subnest/debug-text?attachmentUrl=${encodeURIComponent(attachmentUrl)}`, {
+    const response = await fetch(`https://api.metaspark.co.in/api/pdf/subnest/debug-text?attachmentUrl=${encodeURIComponent(attachmentUrl)}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     
@@ -43,14 +43,14 @@ export const getPdfApiEndpoints = (pdfType) => {
   const isNesting = pdfType === 'nesting';
   return {
     subnest: isNesting 
-      ? 'http://localhost:8080/api/nesting/results'
-      : 'http://localhost:8080/api/pdf/subnest/by-url',
+      ? 'https://api.metaspark.co.in/api/nesting/results'
+      : 'https://api.metaspark.co.in/api/pdf/subnest/by-url',
     parts: isNesting
-      ? 'http://localhost:8080/api/nesting/part-info'
-      : 'http://localhost:8080/api/pdf/subnest/parts/by-url',
+      ? 'https://api.metaspark.co.in/api/nesting/part-info'
+      : 'https://api.metaspark.co.in/api/pdf/subnest/parts/by-url',
     material: isNesting
-      ? 'http://localhost:8080/api/nesting/plate-info'
-      : 'http://localhost:8080/api/pdf/subnest/material-data/by-url'
+      ? 'https://api.metaspark.co.in/api/nesting/plate-info'
+      : 'https://api.metaspark.co.in/api/pdf/subnest/material-data/by-url'
   };
 };
 

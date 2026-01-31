@@ -1,7 +1,7 @@
 import api from '@/utils/api';
 
 // For file uploads we need to handle it differently
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.metaspark.co.in';
 
 // Helper function to get auth token
 const getAuthToken = () => {

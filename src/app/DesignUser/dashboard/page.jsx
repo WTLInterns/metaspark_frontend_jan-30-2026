@@ -153,7 +153,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
         
         for (const dept of departments) {
           console.log(`Fetching users for department: ${dept}`);
-          const response = await fetch(`http://localhost:8080/users/by-department/${dept}`, {
+          const response = await fetch(`https://api.metaspark.co.in/users/by-department/${dept}`, {
             headers: {
               'Authorization': `Bearer ${token}`
             }
@@ -192,7 +192,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
         const authData = JSON.parse(localStorage.getItem('swiftflow-user'));
         const token = authData?.token;
 
-        const response = await fetch(`http://localhost:8080/status/order/${numericOrderId}`, {
+        const response = await fetch(`https://api.metaspark.co.in/status/order/${numericOrderId}`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -258,7 +258,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
       const token = authData?.token;
 
       // Make API call with authorization header
-      const response = await fetch(`http://localhost:8080/status/create/${numericOrderId}`, {
+      const response = await fetch(`https://api.metaspark.co.in/status/create/${numericOrderId}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -272,7 +272,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
 
       // If an employee is selected and status is a department, assign the employee to the order
       if (selectedEmployee && ['DESIGN', 'PRODUCTION', 'MACHINING', 'INSPECTION'].includes(newStatus)) {
-        const assignResponse = await fetch('http://localhost:8080/users/assign-to-order', {
+        const assignResponse = await fetch('https://api.metaspark.co.in/users/assign-to-order', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -305,7 +305,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
 
       // Immediately refresh status history so the UI shows the latest entry
       try {
-        const historyResponse = await fetch(`http://localhost:8080/status/order/${numericOrderId}`, {
+        const historyResponse = await fetch(`https://api.metaspark.co.in/status/order/${numericOrderId}`, {
           headers: {
             'Authorization': `Bearer ${token}`,
           },
@@ -356,7 +356,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
         throw new Error('Invalid stage');
       }
 
-      const response = await fetch(`http://localhost:8080/order/${numericOrderId}/stage-progress`, {
+      const response = await fetch(`https://api.metaspark.co.in/order/${numericOrderId}/stage-progress`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -905,7 +905,7 @@ export default function DashboardPage() {
         const authData = JSON.parse(localStorage.getItem('swiftflow-user'));
         const token = authData?.token;
 
-        const response = await fetch('http://localhost:8080/order/getCountByDepartment', {
+        const response = await fetch('https://api.metaspark.co.in/order/getCountByDepartment', {
           headers: {
             'Authorization': `Bearer ${token}`,
           },

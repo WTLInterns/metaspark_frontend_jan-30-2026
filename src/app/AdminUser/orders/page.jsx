@@ -280,7 +280,7 @@ export default function AllOrdersPage() {
   const handleView = async (order) => {
     try {
       const orderId = order.id.replace('SF', '');
-      const response = await fetch(`http://localhost:8080/order/getById/${orderId}`, {
+      const response = await fetch(`https://api.metaspark.co.in/order/getById/${orderId}`, {
         headers: {
           'Authorization': `Bearer ${JSON.parse(localStorage.getItem('swiftflow-user'))?.token}`
         }
@@ -302,7 +302,7 @@ export default function AllOrdersPage() {
   const handleEdit = async (order) => {
     try {
       const orderId = order.id.replace('SF', '');
-      const response = await fetch(`http://localhost:8080/order/getById/${orderId}`, {
+      const response = await fetch(`https://api.metaspark.co.in/order/getById/${orderId}`, {
         headers: {
           'Authorization': `Bearer ${JSON.parse(localStorage.getItem('swiftflow-user'))?.token}`
         }
@@ -377,7 +377,7 @@ export default function AllOrdersPage() {
         },
       };
 
-      const response = await fetch(`http://localhost:8080/order/update/${orderId}`, {
+      const response = await fetch(`https://api.metaspark.co.in/order/update/${orderId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

@@ -415,7 +415,7 @@ export default function DesignQueuePage() {
             if (!numericId) return [order.id, null];
 
             try {
-              const response = await fetch(`http://localhost:8080/status/order/${numericId}`, {
+              const response = await fetch(`https://api.metaspark.co.in/status/order/${numericId}`, {
                 headers: { Authorization: `Bearer ${token}` },
               });
 
@@ -495,7 +495,7 @@ export default function DesignQueuePage() {
     if (!numericId) return;
 
     try {
-      const res = await fetch(`http://localhost:8080/pdf/order/${numericId}/parts-selection`, {
+      const res = await fetch(`https://api.metaspark.co.in/pdf/order/${numericId}/parts-selection`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -519,7 +519,7 @@ export default function DesignQueuePage() {
     if (!numericId) return;
 
     try {
-      const res = await fetch(`http://localhost:8080/pdf/order/${numericId}/material-selection`, {
+      const res = await fetch(`https://api.metaspark.co.in/pdf/order/${numericId}/material-selection`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -547,7 +547,7 @@ export default function DesignQueuePage() {
 
     try {
       const res = await fetch(
-        `http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`,
+        `https://api.metaspark.co.in/pdf/order/${numericId}/three-checkbox-selection`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!res.ok) return;
@@ -581,7 +581,7 @@ export default function DesignQueuePage() {
 
     const postBaseSelection = async (scope, rowKeys) => {
       if (!Array.isArray(rowKeys) || rowKeys.length === 0) return true;
-      const res = await fetch(`http://localhost:8080/orders/${numericId}/designer-base-selections`, {
+      const res = await fetch(`https://api.metaspark.co.in/orders/${numericId}/designer-base-selections`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -637,7 +637,7 @@ export default function DesignQueuePage() {
 
     try {
       const res = await fetch(
-        `http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`,
+        `https://api.metaspark.co.in/pdf/order/${numericId}/three-checkbox-selection`,
         {
           method: "POST",
           headers: {
@@ -690,7 +690,7 @@ export default function DesignQueuePage() {
           }));
 
         const saveRes = await fetch(
-          `http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`,
+          `https://api.metaspark.co.in/pdf/order/${numericId}/three-checkbox-selection`,
           {
             method: "POST",
             headers: {
@@ -711,7 +711,7 @@ export default function DesignQueuePage() {
 
         // Persist immutable designer base selection (PDF1 + SUBNEST)
         try {
-          await fetch(`http://localhost:8080/orders/${numericId}/designer-base-selections`, {
+          await fetch(`https://api.metaspark.co.in/orders/${numericId}/designer-base-selections`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -750,7 +750,7 @@ export default function DesignQueuePage() {
         if (userRole === "INSPECTION") payload.inspectionSelectedRowIds = inspectionSelectedRowIds;
 
         const saveRes = await fetch(
-          `http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`,
+          `https://api.metaspark.co.in/pdf/order/${numericId}/three-checkbox-selection`,
           {
             method: "POST",
             headers: {
@@ -784,7 +784,7 @@ export default function DesignQueuePage() {
         new Blob([JSON.stringify(statusPayload)], { type: "application/json" })
       );
 
-      const statusRes = await fetch(`http://localhost:8080/status/create/${numericId}`, {
+      const statusRes = await fetch(`https://api.metaspark.co.in/status/create/${numericId}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
@@ -798,7 +798,7 @@ export default function DesignQueuePage() {
       // ✅ 3) Assign employee to order if selected
       if (selectedEmployee) {
         try {
-          const assignRes = await fetch('http://localhost:8080/users/assign-to-order', {
+          const assignRes = await fetch('https://api.metaspark.co.in/users/assign-to-order', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -878,13 +878,13 @@ export default function DesignQueuePage() {
 
     try {
       // ✅ TRY NESTING FIRST
-      const plateApi = `http://localhost:8080/api/nesting/plate-info?attachmentUrl=${encodeURIComponent(
+      const plateApi = `https://api.metaspark.co.in/api/nesting/plate-info?attachmentUrl=${encodeURIComponent(
         attachmentUrl
       )}`;
-      const partApi = `http://localhost:8080/api/nesting/part-info?attachmentUrl=${encodeURIComponent(
+      const partApi = `https://api.metaspark.co.in/api/nesting/part-info?attachmentUrl=${encodeURIComponent(
         attachmentUrl
       )}`;
-      const resultApi = `http://localhost:8080/api/nesting/results?attachmentUrl=${encodeURIComponent(
+      const resultApi = `https://api.metaspark.co.in/api/nesting/results?attachmentUrl=${encodeURIComponent(
         attachmentUrl
       )}`;
 
@@ -919,13 +919,13 @@ export default function DesignQueuePage() {
       }
 
       // ✅ ELSE STANDARD
-      const baseSubnest = `http://localhost:8080/api/pdf/subnest/by-url?attachmentUrl=${encodeURIComponent(
+      const baseSubnest = `https://api.metaspark.co.in/api/pdf/subnest/by-url?attachmentUrl=${encodeURIComponent(
         attachmentUrl
       )}`;
-      const baseParts = `http://localhost:8080/api/pdf/subnest/parts/by-url?attachmentUrl=${encodeURIComponent(
+      const baseParts = `https://api.metaspark.co.in/api/pdf/subnest/parts/by-url?attachmentUrl=${encodeURIComponent(
         attachmentUrl
       )}`;
-      const baseMaterial = `http://localhost:8080/api/pdf/subnest/material-data/by-url?attachmentUrl=${encodeURIComponent(
+      const baseMaterial = `https://api.metaspark.co.in/api/pdf/subnest/material-data/by-url?attachmentUrl=${encodeURIComponent(
         attachmentUrl
       )}`;
 
@@ -974,7 +974,7 @@ export default function DesignQueuePage() {
     const formData = new FormData();
     formData.append("file", file);
 
-    const uploadResponse = await fetch("http://localhost:8080/status/upload-pdf", {
+    const uploadResponse = await fetch("https://api.metaspark.co.in/status/upload-pdf", {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       body: formData,

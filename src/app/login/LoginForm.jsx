@@ -24,7 +24,7 @@ export default function LoginForm() {
     setIsLoading(true);
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.metaspark.co.in';
 
       const response = await fetch(`${baseUrl}/auth/login`, {
         method: 'POST',

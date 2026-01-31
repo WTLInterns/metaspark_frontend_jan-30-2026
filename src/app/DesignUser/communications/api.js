@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:8080/communication';
+const API_BASE_URL = 'https://api.metaspark.co.in/communication';
 
 // Helper function to get auth token (if needed)
 const getAuthToken = () => {

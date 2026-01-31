@@ -226,7 +226,7 @@ export default function ProductionLinePage() {
     if (!numericId) return;
 
     try {
-      const res = await fetch(`http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`, {
+      const res = await fetch(`https://api.metaspark.co.in/pdf/order/${numericId}/three-checkbox-selection`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) return;
@@ -263,7 +263,7 @@ export default function ProductionLinePage() {
     if (userRole === 'INSPECTION') payload.inspectionSelectedRowIds = inspectionSelectedRowIds;
 
     try {
-      const res = await fetch(`http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`, {
+      const res = await fetch(`https://api.metaspark.co.in/pdf/order/${numericId}/three-checkbox-selection`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -313,9 +313,9 @@ export default function ProductionLinePage() {
     const headers = { Authorization: `Bearer ${token}` };
 
     try {
-      const plateApi = `http://localhost:8080/api/nesting/plate-info?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
-      const partApi = `http://localhost:8080/api/nesting/part-info?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
-      const resultApi = `http://localhost:8080/api/nesting/results?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
+      const plateApi = `https://api.metaspark.co.in/api/nesting/plate-info?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
+      const partApi = `https://api.metaspark.co.in/api/nesting/part-info?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
+      const resultApi = `https://api.metaspark.co.in/api/nesting/results?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
 
       const [plateRes, partRes, resultRes] = await Promise.all([
         fetch(plateApi, { headers }),
@@ -347,9 +347,9 @@ export default function ProductionLinePage() {
         return;
       }
 
-      const baseSubnest = `http://localhost:8080/api/pdf/subnest/by-url?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
-      const baseParts = `http://localhost:8080/api/pdf/subnest/parts/by-url?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
-      const baseMaterial = `http://localhost:8080/api/pdf/subnest/material-data/by-url?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
+      const baseSubnest = `https://api.metaspark.co.in/api/pdf/subnest/by-url?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
+      const baseParts = `https://api.metaspark.co.in/api/pdf/subnest/parts/by-url?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
+      const baseMaterial = `https://api.metaspark.co.in/api/pdf/subnest/material-data/by-url?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
 
       const [subnestRes, partsRes, materialRes] = await Promise.all([
         fetch(baseSubnest, { headers }),
@@ -402,7 +402,7 @@ export default function ProductionLinePage() {
 
     try {
       const res = await fetch(
-        `http://localhost:8080/orders/${orderId}/production-assignments?pdfType=${encodeURIComponent(backendPdfType)}&scope=${encodeURIComponent(scope)}`,
+        `https://api.metaspark.co.in/orders/${orderId}/production-assignments?pdfType=${encodeURIComponent(backendPdfType)}&scope=${encodeURIComponent(scope)}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!res.ok) return;
@@ -464,7 +464,7 @@ export default function ProductionLinePage() {
 
       // Fetch assignments to determine which employees have at least one row
       const assignRes = await fetch(
-        `http://localhost:8080/orders/${numericId}/production-assignments?pdfType=${encodeURIComponent(backendPdfType)}&scope=${encodeURIComponent(scope)}`,
+        `https://api.metaspark.co.in/orders/${numericId}/production-assignments?pdfType=${encodeURIComponent(backendPdfType)}&scope=${encodeURIComponent(scope)}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -497,7 +497,7 @@ export default function ProductionLinePage() {
 
       // Call /users/assign-to-order for each employee to ensure order-level visibility
       for (const employeeId of employeeIdSet) {
-        const res = await fetch('http://localhost:8080/users/assign-to-order', {
+        const res = await fetch('https://api.metaspark.co.in/users/assign-to-order', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -539,7 +539,7 @@ export default function ProductionLinePage() {
       const authData = JSON.parse(localStorage.getItem('swiftflow-user'));
       const token = authData?.token;
       
-      const response = await fetch(`http://localhost:8080/machine/getMachine/${machineId}`, {
+      const response = await fetch(`https://api.metaspark.co.in/machine/getMachine/${machineId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -635,7 +635,7 @@ export default function ProductionLinePage() {
 
       // Persist employee-wise assignments (single bulk request)
       setEmployeeRowMap(nextEmployeeRowMap);
-      const bulkRes = await fetch(`http://localhost:8080/orders/${orderId}/production-assignments`, {
+      const bulkRes = await fetch(`https://api.metaspark.co.in/orders/${orderId}/production-assignments`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -714,7 +714,7 @@ export default function ProductionLinePage() {
       if (token) {
         try {
           console.log('🔍 [PRODUCTION] Fetching assigned orders for user:', user.id, user.email);
-          const assignedOrdersResponse = await fetch('http://localhost:8080/users/assigned-orders/' + user.id, {
+          const assignedOrdersResponse = await fetch('https://api.metaspark.co.in/users/assigned-orders/' + user.id, {
             headers: { Authorization: `Bearer ${token}` }
           });
           
@@ -781,7 +781,7 @@ export default function ProductionLinePage() {
       
       console.log('Fetching machine employees...');
       
-      const response = await fetch('http://localhost:8080/users/with-machine-details', {
+      const response = await fetch('https://api.metaspark.co.in/users/with-machine-details', {
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -827,7 +827,7 @@ export default function ProductionLinePage() {
             const numericId = String(order.id).replace(/^SF/i, '');
             if (!numericId) return [order.id, null];
             try {
-              const resp = await fetch(`http://localhost:8080/status/order/${numericId}`, {
+              const resp = await fetch(`https://api.metaspark.co.in/status/order/${numericId}`, {
                 headers: { Authorization: `Bearer ${token}` },
               });
               if (!resp.ok) return [order.id, null];
@@ -919,7 +919,7 @@ export default function ProductionLinePage() {
     if (!numericId) return;
 
     try {
-      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`, {
+      const response = await fetch(`https://api.metaspark.co.in/pdf/order/${numericId}/three-checkbox-selection`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.ok) {
@@ -949,7 +949,7 @@ export default function ProductionLinePage() {
     if (!numericId) return;
 
     try {
-      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/parts-selection`, {
+      const response = await fetch(`https://api.metaspark.co.in/pdf/order/${numericId}/parts-selection`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.ok) {
@@ -980,7 +980,7 @@ export default function ProductionLinePage() {
     if (!numericId) return;
 
     try {
-      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/material-selection`, {
+      const response = await fetch(`https://api.metaspark.co.in/pdf/order/${numericId}/material-selection`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.ok) {
@@ -1027,7 +1027,7 @@ export default function ProductionLinePage() {
     if (!numericId) return;
 
     try {
-      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/parts-selection`, {
+      const response = await fetch(`https://api.metaspark.co.in/pdf/order/${numericId}/parts-selection`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1062,7 +1062,7 @@ export default function ProductionLinePage() {
     if (!numericId) return;
 
     try {
-      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/material-selection`, {
+      const response = await fetch(`https://api.metaspark.co.in/pdf/order/${numericId}/material-selection`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1098,7 +1098,7 @@ export default function ProductionLinePage() {
 
     try {
       setIsSendingToMachine(true);
-      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`, {
+      const response = await fetch(`https://api.metaspark.co.in/pdf/order/${numericId}/three-checkbox-selection`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1123,7 +1123,7 @@ export default function ProductionLinePage() {
           new Blob([JSON.stringify(statusPayload)], { type: 'application/json' })
         );
 
-        const statusRes = await fetch(`http://localhost:8080/status/create/${numericId}`, {
+        const statusRes = await fetch(`https://api.metaspark.co.in/status/create/${numericId}`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`,
@@ -2562,7 +2562,7 @@ export default function ProductionLinePage() {
                         ...(pdfType === 'nesting' ? { machineName: selectedMachineName } : {}),
                         attachmentUrl: pdfModalUrl,
                       });
-                      const res = await fetch(`http://localhost:8080/pdf/order/${numericId}/machining-selection`, {
+                      const res = await fetch(`https://api.metaspark.co.in/pdf/order/${numericId}/machining-selection`, {
                         method: 'POST',
                         headers: {
                           'Content-Type': 'application/json',

@@ -83,7 +83,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
 
       for (const dept of departments) {
         try {
-          const response = await fetch(`http://localhost:8080/users/assigned-to-order/${numericOrderId}/${dept}`, {
+          const response = await fetch(`https://api.metaspark.co.in/users/assigned-to-order/${numericOrderId}/${dept}`, {
             headers: { 'Authorization': `Bearer ${token}` }
           });
           
@@ -116,7 +116,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
       const authData = JSON.parse(localStorage.getItem('swiftflow-user'));
       const token = authData?.token;
       
-      const response = await fetch(`http://localhost:8080/users/by-department/${department}`, {
+      const response = await fetch(`https://api.metaspark.co.in/users/by-department/${department}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
@@ -145,7 +145,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
       
       if (!token || !numericOrderId) return;
 
-      const response = await fetch(`http://localhost:8080/status/order/${numericOrderId}`, {
+      const response = await fetch(`https://api.metaspark.co.in/status/order/${numericOrderId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
@@ -194,7 +194,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
       }
       const authData = JSON.parse(localStorage.getItem('swiftflow-user'));
       const token = authData?.token;
-      const response = await fetch(`http://localhost:8080/status/create/${numericOrderId}`, {
+      const response = await fetch(`https://api.metaspark.co.in/status/create/${numericOrderId}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: formData
@@ -202,7 +202,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
       if (!response.ok) throw new Error('Failed to update status');
       
       if (selectedEmployee && ['DESIGN', 'PRODUCTION', 'MACHINING', 'INSPECTION'].includes(newStatus)) {
-        const assignResponse = await fetch('http://localhost:8080/users/assign-to-order', {
+        const assignResponse = await fetch('https://api.metaspark.co.in/users/assign-to-order', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ userId: selectedEmployee, orderId: numericOrderId, department: newStatus }),
@@ -221,7 +221,7 @@ function DetailsPanel({ order, onClose, onUpdateOrder }) {
       setComment('');
       setAttachment(null);
       setSelectedEmployee('');
-      const historyResponse = await fetch(`http://localhost:8080/status/order/${numericOrderId}`, {
+      const historyResponse = await fetch(`https://api.metaspark.co.in/status/order/${numericOrderId}`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (historyResponse.ok) {
@@ -556,7 +556,7 @@ export default function ProductionDashboardPage() {
         status: 'Inquiry'
       };
 
-      const response = await fetch('http://localhost:8080/order', {
+      const response = await fetch('https://api.metaspark.co.in/order', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

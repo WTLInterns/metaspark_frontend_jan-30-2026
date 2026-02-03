@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import PdfRowOverlayViewer from '@/components/PdfRowOverlayViewer';
 import * as orderApi from '@/app/ProductionUser/orders/api';
+import { getCustomerText, getProductText, formatOrderDate } from '@/utils/orderDisplay';
 
 export default function DesignQueuePage() {
   const router = useRouter();
@@ -354,39 +355,56 @@ export default function DesignQueuePage() {
         userEmail = auth.email || auth.username;
       }
 
-      // Preferred path: use assigned-orders-details for richer info
+      // Use /order/getAll to get full order data with customers[] and products[] arrays
       try {
-        console.log('🔍 [MECHANIST] Fetching assigned order details…');
-        const detailsRes = await fetch('http://localhost:8080/users/assigned-orders-details', {
+        console.log('🔍 [MECHANIST] Fetching all orders with full data…');
+        const allOrdersRes = await fetch('http://localhost:8080/order/getAll', {
           headers: { Authorization: `Bearer ${token}` },
         });
 
-        if (detailsRes.ok) {
-          const details = await detailsRes.json();
-          const list = Array.isArray(details) ? details : [];
+        if (allOrdersRes.ok) {
+          const allOrders = await allOrdersRes.json();
+          const list = Array.isArray(allOrders) ? allOrders : [];
+          
+          console.log('🔍 [MECHANIST] Raw orders from /order/getAll:', list);
 
-          const transformed = list.map((order) => {
-            const productText =
-              order.customProductDetails ||
-              order.productDetails ||
-              'No Product';
+          // Filter for machining department orders
+          const machiningOrders = list.filter(order => {
+            const isMachiningOrder = (order.department || '').toUpperCase() === 'MACHINING' || 
+                                    (order.status || '').toUpperCase() === 'MACHINING';
+            return isMachiningOrder;
+          });
+          
+          console.log('🔍 [MECHANIST] Filtered machining orders:', machiningOrders);
 
+          const transformed = machiningOrders.map((order) => {
+            const customerResult = getCustomerText(order);
+            const productResult = getProductText(order);
+            
+            // DEBUG: Log transformation for first order
+            if (order.orderId === 44) {
+              console.log('🐛 [DEBUG] Machining transformation - orderId:', order.orderId);
+              console.log('🐛 [DEBUG] Machining transformation - customerResult:', customerResult);
+              console.log('🐛 [DEBUG] Machining transformation - productResult:', productResult);
+              console.log('🐛 [DEBUG] Machining transformation - dateAdded:', order.dateAdded);
+            }
+            
             return {
               id: `SF${order.orderId}`,
-              customer: 'Customer', // Customer info not included in AssignedOrderResponse; keep generic
-              products: productText,
-              date: order.dateAdded || '',
+              customer: customerResult,
+              products: productResult,
+              date: formatOrderDate(order.dateAdded),
               status: order.status || 'Active',
               department: (order.department || 'MACHINING'),
             };
           });
 
-          console.log(`✅ [MECHANIST] Loaded ${transformed.length} orders with customer/product info`);
+          console.log(`✅ [MECHANIST] Loaded ${transformed.length} machining orders with full data`);
           setOrders(transformed);
-          return; // Do not fall back if details worked
+          return; // Do not fall back if this worked
         }
       } catch (err) {
-        console.error('⚠️ [MECHANIST] Failed to fetch assigned order details, falling back to IDs:', err);
+        console.error('⚠️ [MECHANIST] Failed to fetch orders from /order/getAll, falling back to legacy:', err);
       }
 
       // Fallback: legacy flow using /users/assigned-orders/{userId}
@@ -416,14 +434,26 @@ export default function DesignQueuePage() {
       const transformed = sorted.map((orderId) => {
         console.log('🔍 [MECHANIST] Processing order ID from backend (fallback):', orderId);
 
-        const customerName = 'Customer';
-        const productText = 'No Product';
-
+        // Fallback - we don't have full order data in this path
+        // Create minimal order object for utility functions
+        const fallbackOrder = { orderId };
+        
+        const customerResult = getCustomerText(fallbackOrder);
+        const productResult = getProductText(fallbackOrder);
+        const dateResult = formatOrderDate('');
+        
+        // DEBUG: Log fallback transformation
+        if (orderId === 44) {
+          console.log('🐛 [DEBUG] Machining fallback - orderId:', orderId);
+          console.log('🐛 [DEBUG] Machining fallback - customerResult:', customerResult);
+          console.log('🐛 [DEBUG] Machining fallback - productResult:', productResult);
+        }
+        
         return {
           id: `SF${orderId}`,
-          customer: customerName,
-          products: productText,
-          date: '',
+          customer: customerResult,
+          products: productResult,
+          date: dateResult,
           status: 'Active',
           department: 'MACHINING',
         };

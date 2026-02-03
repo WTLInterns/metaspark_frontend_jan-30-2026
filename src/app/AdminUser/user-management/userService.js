@@ -25,6 +25,8 @@ export const userService = {
     const authData = JSON.parse(localStorage.getItem('swiftflow-user'));
     const token = authData?.token;
     
+    console.log('[CREATE USER] sending payload:', userData);
+
     const response = await fetch(`${API_BASE_URL}/users`, {
       method: 'POST',
       headers: {
@@ -33,13 +35,37 @@ export const userService = {
       },
       body: JSON.stringify(userData),
     });
-    
+
+    console.log('[CREATE USER] status:', response.status);
+    console.log('[CREATE USER] content-type:', response.headers.get('content-type'));
+
+    const raw = await response.text();
+    console.log('[CREATE USER] raw response body:', raw);
+
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error?.message || 'Failed to create user');
+      let message = 'Failed to create user';
+      try {
+        const parsed = raw ? JSON.parse(raw) : null;
+        if (parsed?.message) {
+          message = parsed.message;
+        }
+      } catch (e) {
+        // ignore JSON parse error, fall back to default message
+      }
+      throw new Error(message);
     }
-    
-    return response.json();
+
+    if (!raw) {
+      // No body returned (e.g. 204) - treat as success with no payload
+      return null;
+    }
+
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      console.error('[CREATE USER] Failed to parse JSON response:', e);
+      return null;
+    }
   },
 
   // Update user

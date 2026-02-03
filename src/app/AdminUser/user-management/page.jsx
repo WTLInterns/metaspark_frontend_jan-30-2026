@@ -40,6 +40,8 @@ export default function UserManagementPage() {
     machineId: "", // Add machineId to form state
   });
 
+  const [isCreating, setIsCreating] = useState(false);
+
   useEffect(() => {
     fetchUsers();
     fetchMachines();
@@ -76,6 +78,7 @@ export default function UserManagementPage() {
   const handleCreateUser = async (e) => {
     e.preventDefault();
     try {
+      setIsCreating(true);
       const userData = {
         username: form.email,
         fullName: form.fullName,
@@ -87,7 +90,7 @@ export default function UserManagementPage() {
       const newUser = await userService.createUser(userData);
       
       // If role is MACHINING and machine is selected, assign machine
-      if (form.role === 'MACHINING' && form.machineId) {
+      if (newUser && form.role === 'MACHINING' && form.machineId) {
         try {
           await userService.assignMachineToUser(newUser.id, parseInt(form.machineId));
           toast.success("User created and machine assigned successfully!");
@@ -102,6 +105,8 @@ export default function UserManagementPage() {
       closeModal();
     } catch (error) {
       toast.error("Failed to create user: " + error.message);
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -469,9 +474,14 @@ export default function UserManagementPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-md bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-700"
+                  disabled={isCreating}
+                  className={`px-4 py-2 rounded-md text-sm font-medium text-white ${
+                    isCreating
+                      ? "bg-indigo-400 cursor-not-allowed"
+                      : "bg-indigo-600 hover:bg-indigo-700"
+                  }`}
                 >
-                  Create User
+                  {isCreating ? "Creating..." : "Create User"}
                 </button>
               </div>
             </form>

@@ -233,14 +233,10 @@ export default function InspectionQueuePage() {
                 : [];
 
             const transformed = sorted.map((order) => {
-                const customer = order.customers && order.customers[0];
-                const customerName = customer
-                    ? (customer.companyName || customer.customerName || 'Unknown Customer')
-                    : 'Unknown Customer';
+                const customerName = order.customers[0].customerName || order.companyName || 'Unknown Customer';
 
-                const productText = order.customProductDetails ||
-                    (order.products && order.products.length > 0
-                        ? `${order.products[0].productCode || ''} ${order.products[0].productName || ''}`.trim() || 'No Product'
+                const productText = (order.products && order.products.length > 0
+                        ? `${order.products[0].productCode || ''} -${order.products[0].productName || ''}`.trim() || 'No Product'
                         : 'No Product');
 
                 return {

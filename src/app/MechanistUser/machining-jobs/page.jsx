@@ -161,7 +161,7 @@ export default function DesignQueuePage() {
     if (!numericId) return;
 
     try {
-      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`, {
+      const response = await fetch(`https://api.metaspark.co.in/pdf/order/${numericId}/three-checkbox-selection`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) return;
@@ -201,7 +201,7 @@ export default function DesignQueuePage() {
 
     try {
       setIsSaving(true);
-      const res = await fetch(`http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`, {
+      const res = await fetch(`https://api.metaspark.co.in/pdf/order/${numericId}/three-checkbox-selection`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -243,9 +243,9 @@ export default function DesignQueuePage() {
     const headers = { Authorization: `Bearer ${token}` };
 
     try {
-      const plateApi = `http://localhost:8080/api/nesting/plate-info?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
-      const partApi = `http://localhost:8080/api/nesting/part-info?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
-      const resultApi = `http://localhost:8080/api/nesting/results?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
+      const plateApi = `https://api.metaspark.co.in/api/nesting/plate-info?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
+      const partApi = `https://api.metaspark.co.in/api/nesting/part-info?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
+      const resultApi = `https://api.metaspark.co.in/api/nesting/results?attachmentUrl=${encodeURIComponent(attachmentUrl)}`;
 
       const [plateRes, partRes, resultRes] = await Promise.all([
         fetch(plateApi, { headers }),
@@ -276,7 +276,7 @@ export default function DesignQueuePage() {
         return;
       }
 
-      const baseUrl = `http://localhost:8080/api/pdf/subnest`;
+      const baseUrl = `https://api.metaspark.co.in/api/pdf/subnest`;
       const attachmentEncoded = encodeURIComponent(attachmentUrl);
 
       const [subnestRes, partsRes, materialRes] = await Promise.all([
@@ -358,7 +358,7 @@ export default function DesignQueuePage() {
       // Use /order/getAll to get full order data with customers[] and products[] arrays
       try {
         console.log('🔍 [MECHANIST] Fetching all orders with full data…');
-        const allOrdersRes = await fetch('http://localhost:8080/order/getAll', {
+        const allOrdersRes = await fetch('https://api.metaspark.co.in/order/getAll', {
           headers: { Authorization: `Bearer ${token}` },
         });
 
@@ -415,7 +415,7 @@ export default function DesignQueuePage() {
 
       console.log('🔍 [MECHANIST] Fetching assigned orders for user (fallback):', userId, userEmail);
 
-      const response = await fetch(`http://localhost:8080/users/assigned-orders/${userId}`, {
+      const response = await fetch(`https://api.metaspark.co.in/users/assigned-orders/${userId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -489,7 +489,7 @@ export default function DesignQueuePage() {
             }
             
             try {
-              const resp = await fetch(`http://localhost:8080/status/order/${numericId}`, {
+              const resp = await fetch(`https://api.metaspark.co.in/status/order/${numericId}`, {
                 headers: { Authorization: `Bearer ${token}` },
               });
               if (!resp.ok) return [order.id, null];
@@ -537,7 +537,7 @@ export default function DesignQueuePage() {
             }
             
             try {
-              const selResp = await fetch(`http://localhost:8080/pdf/order/${numericId}/machining-selection`, {
+              const selResp = await fetch(`https://api.metaspark.co.in/pdf/order/${numericId}/machining-selection`, {
                 headers: { Authorization: `Bearer ${token}` },
               });
               if (!selResp.ok) return [order.id, null];
@@ -643,7 +643,7 @@ export default function DesignQueuePage() {
 
     try {
       const response = await fetch(
-        `http://localhost:8080/orders/${numericId}/my-assignments?pdfType=${encodeURIComponent(backendPdfType)}&scope=${encodeURIComponent(scope)}`,
+        `https://api.metaspark.co.in/orders/${numericId}/my-assignments?pdfType=${encodeURIComponent(backendPdfType)}&scope=${encodeURIComponent(scope)}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!response.ok) return;
@@ -695,7 +695,7 @@ export default function DesignQueuePage() {
     if (!numericId) return;
 
     try {
-      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/parts-selection`, {
+      const response = await fetch(`https://api.metaspark.co.in/pdf/order/${numericId}/parts-selection`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.ok) {
@@ -726,7 +726,7 @@ export default function DesignQueuePage() {
     if (!numericId) return;
 
     try {
-      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/material-selection`, {
+      const response = await fetch(`https://api.metaspark.co.in/pdf/order/${numericId}/material-selection`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.ok) {
@@ -780,7 +780,7 @@ export default function DesignQueuePage() {
 
     try {
       setIsSaving(true);
-      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/parts-selection`, {
+      const response = await fetch(`https://api.metaspark.co.in/pdf/order/${numericId}/parts-selection`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -818,7 +818,7 @@ export default function DesignQueuePage() {
 
     try {
       setIsSaving(true);
-      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/material-selection`, {
+      const response = await fetch(`https://api.metaspark.co.in/pdf/order/${numericId}/material-selection`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -856,7 +856,7 @@ export default function DesignQueuePage() {
 
     try {
       setIsSaving(true);
-      const response = await fetch(`http://localhost:8080/pdf/order/${numericId}/three-checkbox-selection`, {
+      const response = await fetch(`https://api.metaspark.co.in/pdf/order/${numericId}/three-checkbox-selection`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1711,7 +1711,7 @@ export default function DesignQueuePage() {
                             try {
                               setIsSaving(true);
                               const res = await fetch(
-                                `http://localhost:8080/pdf/order/${numericId}/machine-send-to-inspection`,
+                                `https://api.metaspark.co.in/pdf/order/${numericId}/machine-send-to-inspection`,
                                 {
                                   method: 'POST',
                                   headers: {

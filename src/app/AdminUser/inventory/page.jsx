@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { FiDownload, FiPlusCircle, FiEdit, FiTrash2 } from 'react-icons/fi';
-import { getInventoryDashboard, createInwardEntry, createOutwardEntry, downloadInventoryReport, getInventoryRemark, updateInwardEntry, deleteInwardEntry, updateOutwardEntry, deleteOutwardEntry, searchCustomers } from './inventoryService';
+import { getInventoryDashboard, createInwardEntry, createOutwardEntry, downloadInventoryReport, getInventoryRemark, updateInwardEntry, deleteInwardEntry, updateOutwardEntry, deleteOutwardEntry, searchCustomers, deleteMaterial } from './inventoryService';
 
 const formatDate = (dateTime) => {
   if (!dateTime) return '';
@@ -33,6 +33,24 @@ export default function InventoryPage() {
     location: '',
     remarkUnique: '',
   });
+
+  const handleDeleteMaterial = async (row) => {
+    const qty = row.quantity || 0;
+    if (qty > 0) {
+      toast.error('Cannot delete. Stock available.');
+      return;
+    }
+
+    if (!window.confirm('Are you sure you want to delete this material from inventory?')) return;
+
+    try {
+      await deleteMaterial(row.id);
+      toast.success('Material deleted');
+      await loadDashboard();
+    } catch (e) {
+      toast.error(e.message || 'Failed to delete material');
+    }
+  };
 
   const [outwardForm, setOutwardForm] = useState({
     customer: '',
@@ -289,8 +307,9 @@ export default function InventoryPage() {
   };
 
   const handleCustomerChange = (value) => {
-    setOutwardForm(prev => ({ ...prev, customer: value }));
-    setCustomerQuery(value);
+    const safeValue = value || '';
+    setOutwardForm(prev => ({ ...prev, customer: safeValue }));
+    setCustomerQuery(safeValue);
 
     if (customerSearchTimeout) {
       clearTimeout(customerSearchTimeout);
@@ -304,7 +323,20 @@ export default function InventoryPage() {
     const timeout = setTimeout(async () => {
       try {
         const results = await searchCustomers(value.trim());
-        setCustomerSuggestions(results);
+        const normalized = (results || []).map((item, index) => {
+          if (typeof item === 'string') {
+            return {
+              id: index,
+              name: item,
+            };
+          }
+          const name = item.customerName || item.name || item.customer || '';
+          return {
+            id: item.id ?? index,
+            name,
+          };
+        });
+        setCustomerSuggestions(normalized);
       } catch (e) {
         console.error(e);
       }
@@ -542,16 +574,17 @@ export default function InventoryPage() {
                       <th className="bg-gray-100 text-gray-900 font-bold px-4 py-3 text-left text-sm">Quantity</th>
                       <th className="bg-gray-100 text-gray-900 font-bold px-4 py-3 text-left text-sm">Location</th>
                       <th className="bg-gray-100 text-gray-900 font-bold px-4 py-3 text-left text-sm">Default Supplier</th>
+                      <th className="bg-gray-100 text-gray-900 font-bold px-4 py-3 text-right text-sm">Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {loading ? (
                       <tr>
-                        <td colSpan={6} className="py-6 text-center text-gray-500">Loading...</td>
+                        <td colSpan={7} className="py-6 text-center text-gray-500">Loading...</td>
                       </tr>
                     ) : filteredInventory.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-6 text-center text-gray-500">No inventory records found</td>
+                        <td colSpan={7} className="py-6 text-center text-gray-500">No inventory records found</td>
                       </tr>
                     ) : (
                       filteredInventory.map((row, idx) => (
@@ -570,6 +603,19 @@ export default function InventoryPage() {
                           </td>
                           <td className="py-3 px-4 text-gray-900">{row.location}</td>
                           <td className="py-3 px-4 text-gray-900">{row.defaultSupplier}</td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMaterial(row)}
+                              disabled={(row.quantity || 0) > 0}
+                              title={(row.quantity || 0) > 0 ? 'Cannot delete. Stock available.' : 'Delete material'}
+                              className={"inline-flex items-center justify-center " + ((row.quantity || 0) > 0
+                                ? 'text-gray-300 cursor-not-allowed'
+                                : 'text-red-600 hover:text-red-700')}
+                            >
+                              <FiTrash2 />
+                            </button>
+                          </td>
                         </tr>
                       ))
                     )}
@@ -667,9 +713,204 @@ export default function InventoryPage() {
               <div className="flex items-center justify-end gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowInwardModal(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  onClick={() => {
+                    setShowInwardModal(false);
+                    setEditingInwardId(null);
+                  }}
                 >
                   Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingInward}
+                  className={`px-4 py-2 rounded-md text-sm font-medium text-white ${
+                    submittingInward ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                  }`}
+                >
+                  {submittingInward
+                    ? editingInwardId
+                      ? 'Updating...'
+                      : 'Adding...'
+                    : editingInwardId
+                      ? 'Update Entry'
+                      : 'Add Entry'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showOutwardModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {editingOutwardId ? 'Edit Outward Entry' : 'Add Outward Entry'}
+                </h3>
+                <p className="text-xs text-gray-500">Record material issued to customers/orders.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOutwardModal(false);
+                  setEditingOutwardId(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+            <form onSubmit={handleOutwardSubmit} className="px-6 py-4 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Customer</label>
+                  <input
+                    type="text"
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    value={outwardForm.customer || ''}
+                    onChange={e => handleCustomerChange(e.target.value)}
+                    placeholder="Search customer..."
+                  />
+                  {customerSuggestions && customerSuggestions.length > 0 && (
+                    <div className="mt-1 max-h-40 overflow-y-auto border border-gray-200 rounded-md bg-white shadow-sm text-sm">
+                      {customerSuggestions.map((cust, index) => (
+                        <button
+                          key={cust.id ?? index}
+                          type="button"
+                          className="w-full text-left px-3 py-2 hover:bg-gray-100"
+                          onClick={() => {
+                            handleCustomerChange(cust.name || '');
+                            setCustomerSuggestions([]);
+                          }}
+                        >
+                          {cust.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Material</label>
+                  <select
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    value={outwardForm.materialId || ''}
+                    onChange={e =>
+                      setOutwardForm(prev => ({
+                        ...prev,
+                        materialId: e.target.value ? Number(e.target.value) : '',
+                      }))
+                    }
+                  >
+                    <option value="">Select material</option>
+                    {data.totalInventory.map(mat => (
+                      <option key={mat.id} value={mat.id}>
+                        {`${mat.materialName} | ${mat.sheetSize || '-'} | ${mat.thickness || '-'}`}
+                      </option>
+                    ))}
+                  </select>
+
+                  {selectedOutwardMaterial && (
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Size</label>
+                        <input
+                          type="text"
+                          readOnly
+                          className="w-full border border-gray-200 bg-gray-50 rounded-md px-3 py-2 text-sm"
+                          value={selectedOutwardMaterial.sheetSize || ''}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Thickness</label>
+                        <input
+                          type="text"
+                          readOnly
+                          className="w-full border border-gray-200 bg-gray-50 rounded-md px-3 py-2 text-sm"
+                          value={selectedOutwardMaterial.thickness || ''}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Quantity</label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    value={outwardForm.quantity || ''}
+                    onChange={e => {
+                      const raw = e.target.value;
+                      if (raw === '') {
+                        setOutwardForm(prev => ({ ...prev, quantity: '' }));
+                        return;
+                      }
+
+                      const numeric = Number(raw);
+                      const max = selectedOutwardMaterial ? (selectedOutwardMaterial.quantity ?? 0) : null;
+
+                      if (max != null && Number.isFinite(numeric) && numeric > max) {
+                        setOutwardForm(prev => ({ ...prev, quantity: String(max) }));
+                      } else {
+                        setOutwardForm(prev => ({ ...prev, quantity: raw }));
+                      }
+                    }}
+                  />
+
+                  {selectedOutwardMaterial && (
+                    <p
+                      className={`mt-1 text-xs font-medium ${
+                        (selectedOutwardMaterial.quantity || 0) < 100
+                          ? 'text-red-600'
+                          : 'text-green-600'
+                      }`}
+                    >
+                      Available Stock: {selectedOutwardMaterial.quantity ?? 0} sheets
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Remark</label>
+                  <input
+                    type="text"
+                    readOnly
+                    className="w-full border border-gray-200 bg-gray-50 rounded-md px-3 py-2 text-sm"
+                    value={outwardForm.remarkUnique}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  onClick={() => {
+                    setShowOutwardModal(false);
+                    setEditingOutwardId(null);
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingOutward}
+                  className={`px-4 py-2 rounded-md text-sm font-medium text-white ${
+                    submittingOutward ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                  }`}
+                >
+                  {submittingOutward
+                    ? editingOutwardId
+                      ? 'Updating...'
+                      : 'Adding...'
+                    : editingOutwardId
+                      ? 'Update Entry'
+                      : 'Add Entry'}
                 </button>
               </div>
             </form>

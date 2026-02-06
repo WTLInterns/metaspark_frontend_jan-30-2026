@@ -103,6 +103,19 @@ export const deleteOutwardEntry = async (id) => {
   return true;
 };
 
+export const deleteMaterial = async (id) => {
+  const token = getAuthToken();
+  const response = await fetch(`${API_BASE_URL}/api/inventory/material/${id}`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+
+  await handleApiError(response);
+  return true;
+};
+
 export const createOutwardEntry = async (data) => {
   const token = getAuthToken();
   const response = await fetch(`${API_BASE_URL}/api/inventory/outward`, {
